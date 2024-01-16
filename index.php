@@ -68,6 +68,9 @@ function getSipCredentials($cloudUsername, $cloudPassword, $cloudDomain) {
 }
 
 function handle($data) {
+    if (!isset($data['username']) or !isset($data['password'])) {
+        return header('HTTP/1.1 400 Bad Request');
+    }
     $tmp = trim(strtolower($data['username']));
     $cloudUsername = substr($tmp, 0, strpos($tmp, '@'));
     $cloudDomain = substr($tmp, strpos($tmp, '@') + 1);
@@ -101,4 +104,8 @@ function handle($data) {
 
 $jsonData = file_get_contents('php://input');
 $data = json_decode($jsonData, true);
-handle($data);
+if ($data) {
+    handle($data);
+} else {
+    header('HTTP/1.1 400 Bad Request');
+}
