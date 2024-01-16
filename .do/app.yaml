@@ -1,0 +1,8 @@
+name: ctiapp-authproxy
+services:
+- environment_slug: php
+  github:
+    branch: main
+    deploy_on_push: true
+    repo: nethesis/ctiapp-authproxy
+  name: ctiapp-authproxy
