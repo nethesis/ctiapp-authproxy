@@ -68,8 +68,12 @@ function getSipCredentials($cloudUsername, $cloudPassword, $cloudDomain) {
 }
 
 function handle($data) {
-    if (!isset($data['username']) or !isset($data['password'])) {
+    if (!isset($data['username']) or !isset($data['password']) or !isset($data['token'])) {
         return header('HTTP/1.1 400 Bad Request');
+    }
+    $token = getenv("TOKEN");
+    if ($token != $data['token']) {
+        return header('HTTP/1.1 401 Invalid Token');
     }
     $tmp = trim(strtolower($data['username']));
     $cloudUsername = substr($tmp, 0, strpos($tmp, '@'));
