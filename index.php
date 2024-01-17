@@ -100,7 +100,7 @@ function handle($data) {
   <extProvInterval>3600</extProvInterval>
   $proxy
   <host>{$cloudDomain}</host>
-  <transport>tls</transport>
+  <transport>tls+sip:</transport>
 </account>
 ";
     echo $out;
