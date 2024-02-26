@@ -8,7 +8,7 @@
 function getSipCredentials($cloudUsername, $cloudPassword, $cloudDomain) {
     // Step 1: Authenticate and obtain the authentication token
     $authUrl = "https://$cloudDomain/webrest/authentication/login";
-    $authData = "username=$cloudUsername&password=$cloudPassword";
+    $authData = "username=".urlencode($cloudUsername)."&password=".urlencode($cloudPassword);
     
     $ch = curl_init($authUrl);
     curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
