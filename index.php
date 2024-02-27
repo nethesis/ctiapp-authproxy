@@ -80,12 +80,10 @@ function handle($data) {
     if ($token != $data['token']) {
         return header('HTTP/1.1 401 Invalid Token');
     }
-    $tmp = trim(strtolower($data['username']));
-    $cloudUsername = substr($tmp, 0, strpos($tmp, '@'));
-    $cloudDomain = substr($tmp, strpos($tmp, '@') + 1);
-    // if there is @qrcode in the string, password is a token. Remove it and set the isToken to true.
-    if (strpos($data['username'], '@qrcode') !== false) {
-        $data['username'] = str_replace('@qrcode', '', $data['username']);
+    $tmp = explode('@',trim(strtolower($data['username'])));
+    $cloudUsername = $tmp[0];
+    $cloudDomain = $tmp[1];
+    if (isset($tmp[2]) && $tmp[2] === 'qrcode') {
         $isToken = true;
     } else {
         $isToken = false;
