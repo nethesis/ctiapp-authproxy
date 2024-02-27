@@ -5,39 +5,43 @@
 #
 
 // login to cti using the cloud credentials and get the sip credentials using the /user/me API
-function getSipCredentials($cloudUsername, $cloudPassword, $cloudDomain) {
-    // Step 1: Authenticate and obtain the authentication token
-    $authUrl = "https://$cloudDomain/webrest/authentication/login";
-    $authData = "username=".urlencode($cloudUsername)."&password=".urlencode($cloudPassword);
+function getSipCredentials($cloudUsername, $cloudPassword, $cloudDomain, $isToken = false) {
+    // Step 1: Authenticate and obtain the authentication token if isToken is false
+    if (!$isToken) {
+        $authUrl = "https://$cloudDomain/webrest/authentication/login";
+        $authData = "username=".urlencode($cloudUsername)."&password=".urlencode($cloudPassword);
     
-    $ch = curl_init($authUrl);
-    curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
-    curl_setopt($ch, CURLOPT_POST, true);
-    curl_setopt($ch, CURLOPT_POSTFIELDS, $authData);
-    curl_setopt($ch, CURLOPT_SSL_VERIFYPEER, false);
-    curl_setopt($ch, CURLOPT_HEADER, true);
-    
-    $response = curl_exec($ch);
-    $httpCode = curl_getinfo($ch, CURLINFO_HTTP_CODE);
-    
-    curl_close($ch);
-    if ($httpCode !== 401) {
-        return False;
-    }
-    
-    // Step 2: Extract the nonce from the response header
-    preg_match('/uthenticate: Digest ([0-9a-f]+)/', $response, $matches);
+        $ch = curl_init($authUrl);
+        curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
+        curl_setopt($ch, CURLOPT_POST, true);
+        curl_setopt($ch, CURLOPT_POSTFIELDS, $authData);
+        curl_setopt($ch, CURLOPT_SSL_VERIFYPEER, false);
+        curl_setopt($ch, CURLOPT_HEADER, true);
+        
+        $response = curl_exec($ch);
+        $httpCode = curl_getinfo($ch, CURLINFO_HTTP_CODE);
+        
+        curl_close($ch);
+        if ($httpCode !== 401) {
+            return False;
+        }
 
-    if (!isset($matches[1])) {
-        return False;
+        // Step 2: Extract the nonce from the response header
+        preg_match('/uthenticate: Digest ([0-9a-f]+)/', $response, $matches);
+
+        if (!isset($matches[1])) {
+            return False;
+        }
+        
+        $nonce = $matches[1];
+        
+        // Step 3: Build the authentication token
+        $tohash = "$cloudUsername:$cloudPassword:$nonce";
+        $token = hash_hmac('sha1', $tohash, $cloudPassword);
+    } else {
+        // Password is already a token
+        $token = $cloudPassword;
     }
-    
-    $nonce = $matches[1];
-    
-    // Step 3: Build the authentication token
-    $tohash = "$cloudUsername:$cloudPassword:$nonce";
-    $token = hash_hmac('sha1', $tohash, $cloudPassword);
-    
     // Step 4: Make the request to user/me API
     $url = "https://$cloudDomain/webrest/user/me";
 
@@ -78,9 +82,16 @@ function handle($data) {
     $tmp = trim(strtolower($data['username']));
     $cloudUsername = substr($tmp, 0, strpos($tmp, '@'));
     $cloudDomain = substr($tmp, strpos($tmp, '@') + 1);
+    // if there is @qrcode in the string, password is a token. Remove it and set the isToken to true.
+    if (strpos($data['username'], '@qrcode') !== false) {
+        $data['username'] = str_replace('@qrcode', '', $data['username']);
+        $isToken = true;
+    } else {
+        $isToken = false;
+    }
     $cloudPassword = $data['password'];
 
-    $result = getSipCredentials($cloudUsername, $cloudPassword, $cloudDomain);
+    $result = getSipCredentials($cloudUsername, $cloudPassword, $cloudDomain, $isToken);
 
     if (!$result) {
         return header("HTTP/1.0 404 Not Found");
