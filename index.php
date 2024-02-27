@@ -64,7 +64,8 @@ function getSipCredentials($cloudUsername, $cloudPassword, $cloudDomain, $isToke
             return [
                 'sipUser' => $sipUser,
                 'sipPassword' => $sipPassword,
-                'nv8' => isset($response['profile']['macro_permissions']['nethvoice_cti'])
+                'nv8' => isset($response['profile']['macro_permissions']['nethvoice_cti']),
+                'token' => $token,
             ];
         }
     }
@@ -104,8 +105,8 @@ function handle($data) {
     }
     $out = "
 <account>
-  <cloud_username>{$cloudUsername}@{$cloudDomain}</cloud_username>
-  <cloud_password>{$cloudPassword}</cloud_password>
+  <cloud_username>{$cloudUsername}@{$cloudDomain}@qrcode</cloud_username>
+  <cloud_password>{$result['token']}</cloud_password>
   <username>{$result['sipUser']}</username>
   <password>{$result['sipPassword']}</password>
   <extProvInterval>3600</extProvInterval>
