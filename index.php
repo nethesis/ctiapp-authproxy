@@ -65,7 +65,6 @@ function getSipCredentials($cloudUsername, $cloudPassword, $cloudDomain, $isToke
                 'sipUser' => $sipUser,
                 'sipPassword' => $sipPassword,
                 'nv8' => isset($response['profile']['macro_permissions']['nethvoice_cti']),
-                'token' => $token,
             ];
         }
     }
@@ -87,8 +86,10 @@ function handle($data) {
     if (strpos($data['username'], '@qrcode') !== false) {
         $data['username'] = str_replace('@qrcode', '', $data['username']);
         $isToken = true;
+        $loginTypeString = "@qrcode";
     } else {
         $isToken = false;
+        $loginTypeString = "";
     }
     $cloudPassword = $data['password'];
 
@@ -105,8 +106,8 @@ function handle($data) {
     }
     $out = "
 <account>
-  <cloud_username>{$cloudUsername}@{$cloudDomain}@qrcode</cloud_username>
-  <cloud_password>{$result['token']}</cloud_password>
+  <cloud_username>{$cloudUsername}@{$cloudDomain}{$loginTypeString}</cloud_username>
+  <cloud_password>{$cloudPassword}</cloud_password>
   <username>{$result['sipUser']}</username>
   <password>{$result['sipPassword']}</password>
   <extProvInterval>3600</extProvInterval>
