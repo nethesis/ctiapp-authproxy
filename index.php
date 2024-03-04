@@ -58,7 +58,8 @@ function getSipCredentials($cloudUsername, $cloudPassword, $cloudDomain, $isToke
 
     // Step 5: check if lk is set and is valid
     if (isset($response['lkhash'])) {
-        $ch = curl_init("https://my.nethesis.it/auth-test");
+        $url = getenv("VALIDATE_LK_URL");
+        $ch = curl_init($url);
         curl_setopt($ch, CURLOPT_SSL_VERIFYPEER, false);
         $headers = array("Authorization: Bearer ".$response['lkhash']);
         curl_setopt($ch, CURLOPT_HTTPHEADER, $headers);
