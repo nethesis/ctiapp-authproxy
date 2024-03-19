@@ -56,7 +56,24 @@ function getSipCredentials($cloudUsername, $cloudPassword, $cloudDomain, $isToke
     
     $response = json_decode($response, true);
 
-    // get the sip credentials from the response
+    // Step 5: check if lk is set and is valid
+    if (isset($response['lkhash'])) {
+        $url = getenv("VALIDATE_LK_URL");
+        $ch = curl_init($url);
+        curl_setopt($ch, CURLOPT_SSL_VERIFYPEER, false);
+        $headers = array("Authorization: Bearer ".$response['lkhash']);
+        curl_setopt($ch, CURLOPT_HTTPHEADER, $headers);
+        $lkcheck = curl_exec($ch);
+        $httpCode = curl_getinfo($ch, CURLINFO_HTTP_CODE);
+        curl_close($ch);
+        if ($httpCode !== 200) {
+            return false;
+        }
+    } else {
+        return false;
+    }
+
+    // Step 6: Return the sip credentials
     foreach ($response['endpoints']['extension'] as $extension) {
         if ($extension['type'] == 'mobile') {
             $sipUser = $extension['id'];
