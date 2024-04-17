@@ -81,7 +81,7 @@ function getSipCredentials($cloudUsername, $cloudPassword, $cloudDomain, $isToke
             return [
                 'sipUser' => $sipUser,
                 'sipPassword' => $sipPassword,
-                'nv8' => isset($response['profile']['macro_permissions']['nethvoice_cti']),
+                'proxy_fqdn' => (isset($response['proxy_fqdn']) ? $response['proxy_fqdn'] : "")
             ];
         }
     }
@@ -116,8 +116,8 @@ function handle($data) {
 
     header("Content-type: text/xml");
     $proxy = "";
-    if ($result['nv8']) {
-        $proxy = "<proxy>{$cloudDomain}:5061</proxy>";
+    if ($result['proxy_fqdn']) {
+        $proxy = "<proxy>{$result['proxy_fqdn']}:5061</proxy>";
     }
     $out = "
 <account>
