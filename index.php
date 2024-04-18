@@ -131,7 +131,7 @@ function handle($data) {
     if ($result['proxy_fqdn']) {
         $proxy = "<proxy>{$result['proxy_fqdn']}:5061</proxy>";
     } elseif ($result['nv8']) { // TODO remove when nethcti-server is updated
-        $proxy = "<proxy>voip.nethesis.it:5061</proxy>";
+        $proxy = "<proxy>{$cloudDomain}:5061</proxy>";
     } else {
         if (getenv('DEBUG') && $_ENV['DEBUG'] === 'true') error_log("DEBUG: No proxy fqdn found in response for {$cloudUsername}@{$cloudDomain}");
     }
