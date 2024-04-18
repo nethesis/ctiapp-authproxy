@@ -88,6 +88,7 @@ function getSipCredentials($cloudUsername, $cloudPassword, $cloudDomain, $isToke
             return [
                 'sipUser' => $sipUser,
                 'sipPassword' => $sipPassword,
+                'nv8' => isset($response['profile']['macro_permissions']['nethvoice_cti']), // TODO remove when nethcti-server is updated
                 'proxy_fqdn' => (isset($response['proxy_fqdn']) ? $response['proxy_fqdn'] : "")
             ];
         }
@@ -129,6 +130,8 @@ function handle($data) {
     $proxy = "";
     if ($result['proxy_fqdn']) {
         $proxy = "<proxy>{$result['proxy_fqdn']}:5061</proxy>";
+    } elseif ($result['nv8']) { // TODO remove when nethcti-server is updated
+        $proxy = "<proxy>voip.nethesis.it:5061</proxy>";
     } else {
         if (getenv('DEBUG') && $_ENV['DEBUG'] === 'true') error_log("DEBUG: No proxy fqdn found in response for {$cloudUsername}@{$cloudDomain}");
     }
