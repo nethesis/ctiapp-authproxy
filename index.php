@@ -4,7 +4,7 @@
 # SPDX-License-Identifier: AGPL-3.0
 #
 
-// function to make requests
+// function to make http GET requests
 function makeRequest($username, $token, $url)
 {
     // init curl
@@ -236,7 +236,7 @@ function handle($data)
                 // print debug string
                 if (getenv('DEBUG') && $_ENV['DEBUG'] === 'true')
                     error_log('DEBUG: Returning sip credentials: ' . preg_replace('/password>.*<\//', 'password>xxxx</', $xmlConfString));
-                
+
                 break;
             // handle Contact Sources app
             case 'contacts':
@@ -382,7 +382,7 @@ if ($data) {
     // start request handle
     handle($data);
 } else {
-    // no date, return 400
+    // no data, return 400
     error_log("ERROR: Invalid request: missing data");
     header('HTTP/1.1 400 Bad Request');
 }
