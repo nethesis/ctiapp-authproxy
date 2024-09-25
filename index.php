@@ -90,13 +90,13 @@ function getSipCredentials($cloudUsername, $cloudPassword, $cloudDomain, $isToke
         $token = $cloudPassword;
     }
 
-    // Step 4: Make the request to user/me API
+    // Step 2: Make the request to user/me API
     $url = "https://$cloudDomain/webrest/user/me";
 
     // make response
     $response = makeRequest($cloudUsername, $token, $url);
 
-    // Step 5: check if lk is set and is valid
+    // Step 3: check if lk is set and is valid
     if (isset($response['lkhash'])) {
         // read api url from env
         $url = getenv("VALIDATE_LK_URL");
@@ -128,7 +128,7 @@ function getSipCredentials($cloudUsername, $cloudPassword, $cloudDomain, $isToke
         return false;
     }
 
-    // Step 6: Return the sip credentials
+    // Step 4: Return the sip credentials
     foreach ($response['endpoints']['extension'] as $extension) {
         if ($extension['type'] == 'mobile') {
             $sipUser = $extension['id'];
@@ -142,7 +142,7 @@ function getSipCredentials($cloudUsername, $cloudPassword, $cloudDomain, $isToke
         }
     }
 
-    // if step 6 has no endpoints, return false
+    // if step 4 has no endpoints, return false
     return false;
 }
 
