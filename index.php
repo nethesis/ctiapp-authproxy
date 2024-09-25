@@ -4,6 +4,27 @@
 # SPDX-License-Identifier: AGPL-3.0
 #
 
+// function to make requests
+function makeRequest($username, $token, $url)
+{
+    // init curl
+    $ch = curl_init($url);
+    curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
+    curl_setopt($ch, CURLOPT_SSL_VERIFYPEER, false);
+
+    // set headers
+    $headers = array("Authorization: $username:$token");
+    curl_setopt($ch, CURLOPT_HTTPHEADER, $headers);
+    $response = curl_exec($ch);
+    curl_close($ch);
+
+    // read response
+    $response = json_decode($response, true);
+
+    // return response
+    return $response;
+}
+
 // function get auth token
 function getAuthToken($cloudUsername, $cloudPassword, $cloudDomain)
 {
@@ -72,16 +93,8 @@ function getSipCredentials($cloudUsername, $cloudPassword, $cloudDomain, $isToke
     // Step 4: Make the request to user/me API
     $url = "https://$cloudDomain/webrest/user/me";
 
-    $ch = curl_init($url);
-    curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
-    curl_setopt($ch, CURLOPT_SSL_VERIFYPEER, false);
-
-    $headers = array("Authorization: $cloudUsername:$token");
-    curl_setopt($ch, CURLOPT_HTTPHEADER, $headers);
-    $response = curl_exec($ch);
-    curl_close($ch);
-
-    $response = json_decode($response, true);
+    // make response
+    $response = makeRequest($cloudUsername, $token, $url);
 
     // Step 5: check if lk is set and is valid
     if (isset($response['lkhash'])) {
@@ -129,7 +142,7 @@ function getSipCredentials($cloudUsername, $cloudPassword, $cloudDomain, $isToke
         }
     }
 
-    // if step 6 is failed, return false
+    // if step 6 has no endpoints, return false
     return false;
 }
 
@@ -178,6 +191,53 @@ function handle($data)
 
         // switch app case
         switch ($app) {
+            // handle External Provisioning app
+            case 'login':
+                // get sip credentials with POST data
+                $result = getSipCredentials($cloudUsername, $cloudPassword, $cloudDomain, $isToken);
+
+                // check if sip credentials exists
+                if (!$result) {
+                    error_log("ERROR: Failed to get sip credentials for {$cloudUsername}@{$cloudDomain}");
+                    return header("HTTP/1.0 404 Not Found");
+                }
+
+                // set headers
+                header("Content-type: text/xml");
+
+                // compose xml configuration string
+                $proxy = "";
+                if ($result['proxy_fqdn']) {
+                    $proxy = "<proxy>{$result['proxy_fqdn']}:5061</proxy>";
+                } elseif ($result['nv8']) { // TODO remove when nethcti-server is updated
+                    $proxy = "<proxy>{$cloudDomain}:5061</proxy>";
+                } else {
+                    if (getenv('DEBUG') && $_ENV['DEBUG'] === 'true')
+                        error_log("DEBUG: No proxy fqdn found in response for {$cloudUsername}@{$cloudDomain}");
+                }
+
+                // compose final xml string
+                $xmlConfString = "
+                    <account>
+                    <cloud_username>{$cloudUsername}@{$cloudDomain}{$loginTypeString}</cloud_username>
+                    <cloud_password>{$cloudPassword}</cloud_password>
+                    <username>{$result['sipUser']}</username>
+                    <password>{$result['sipPassword']}</password>
+                    <extProvInterval>3600</extProvInterval>
+                    $proxy
+                    <host>{$cloudDomain}</host>
+                    <transport>tls+sip:</transport>
+                    </account>
+                    ";
+
+                // return xml string
+                echo $xmlConfString;
+
+                // print debug string
+                if (getenv('DEBUG') && $_ENV['DEBUG'] === 'true')
+                    error_log('DEBUG: Returning sip credentials: ' . preg_replace('/password>.*<\//', 'password>xxxx</', $xmlConfString));
+                
+                break;
             // handle Contact Sources app
             case 'contacts':
                 // get auth token
@@ -186,19 +246,8 @@ function handle($data)
                 // get phonebook counters
                 $url = "https://$cloudDomain/webrest/phonebook/search/?offset=0&limit=1&view=all";
 
-                // init curl
-                $ch = curl_init($url);
-                curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
-                curl_setopt($ch, CURLOPT_SSL_VERIFYPEER, false);
-
-                // set headers
-                $headers = array("Authorization: $cloudUsername:$token");
-                curl_setopt($ch, CURLOPT_HTTPHEADER, $headers);
-                $response = curl_exec($ch);
-                curl_close($ch);
-
-                // read response
-                $response = json_decode($response, true);
+                // make request
+                $response = makeRequest($cloudUsername, $token, $url);
 
                 // read counter file
                 $count = 0;
@@ -221,24 +270,13 @@ function handle($data)
 
                 // new contacts found, write to log
                 if (getenv('DEBUG') && $_ENV['DEBUG'] === 'true')
-                        error_log('DEBUG: Phonebook new contacts found: ' . $response['count']);
+                    error_log('DEBUG: Phonebook new contacts found: ' . $response['count']);
 
                 // make request to get all phonebook contacts
                 $url = "https://$cloudDomain/webrest/phonebook/search/?view=all";
 
-                // init curl
-                $ch = curl_init($url);
-                curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
-                curl_setopt($ch, CURLOPT_SSL_VERIFYPEER, false);
-
-                // set headers
-                $headers = array("Authorization: $cloudUsername:$token");
-                curl_setopt($ch, CURLOPT_HTTPHEADER, $headers);
-                $response = curl_exec($ch);
-                curl_close($ch);
-
-                // read response
-                $response = json_decode($response, true);
+                // make request
+                $response = makeRequest($cloudUsername, $token, $url);
 
                 // create contacts object
                 $contacts = array();
@@ -325,53 +363,11 @@ function handle($data)
                 // print results
                 $result = json_encode(array("contacts" => $contacts));
                 echo $result;
+
                 break;
             default:
                 break;
         }
-    } else {
-        // get sip credentials with POST data
-        $result = getSipCredentials($cloudUsername, $cloudPassword, $cloudDomain, $isToken);
-
-        // check if sip credentials exists
-        if (!$result) {
-            error_log("ERROR: Failed to get sip credentials for {$cloudUsername}@{$cloudDomain}");
-            return header("HTTP/1.0 404 Not Found");
-        }
-
-        // set headers
-        header("Content-type: text/xml");
-
-        // compose xml configuration string
-        $proxy = "";
-        if ($result['proxy_fqdn']) {
-            $proxy = "<proxy>{$result['proxy_fqdn']}:5061</proxy>";
-        } elseif ($result['nv8']) { // TODO remove when nethcti-server is updated
-            $proxy = "<proxy>{$cloudDomain}:5061</proxy>";
-        } else {
-            if (getenv('DEBUG') && $_ENV['DEBUG'] === 'true')
-                error_log("DEBUG: No proxy fqdn found in response for {$cloudUsername}@{$cloudDomain}");
-        }
-
-        // compose final xml string
-        $out = "
-    <account>
-    <cloud_username>{$cloudUsername}@{$cloudDomain}{$loginTypeString}</cloud_username>
-    <cloud_password>{$cloudPassword}</cloud_password>
-    <username>{$result['sipUser']}</username>
-    <password>{$result['sipPassword']}</password>
-    <extProvInterval>3600</extProvInterval>
-    $proxy
-    <host>{$cloudDomain}</host>
-    <transport>tls+sip:</transport>
-    </account>
-    ";
-        // return xml string
-        echo $out;
-
-        // print debug string
-        if (getenv('DEBUG') && $_ENV['DEBUG'] === 'true')
-            error_log('DEBUG: Returning sip credentials: ' . preg_replace('/password>.*<\//', 'password>xxxx</', $out));
     }
 }
 
