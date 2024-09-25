@@ -258,13 +258,13 @@ function handle($data)
                 // get request headers
                 $headers = apache_request_headers();
 
-                // check if counter is equal, return 304 Not Modified
-                if (isset($headers['If-Modified-Since']) && $count == $response['count']) {
+                // check if counter is equal or last modified is 24 hours ago, return 304 Not Modified
+                if (isset($headers['If-Modified-Since']) && strtotime($headers['If-Modified-Since']) >= strtotime('-24 hours', time()) && $count == $response['count']) {
                     if (getenv('DEBUG') && $_ENV['DEBUG'] === 'true')
-                        error_log('DEBUG: Phonebook contacts are the same: ' . $count);
+                        error_log('DEBUG: Phonebook contacts are the same: ' . $count . ' since ' . $headers['If-Modified-Since']);
 
                     // return header 304
-                    header('HTTP/1.1 304 Not Modified; Last-Modified: ' . date(DATE_RFC2822));
+                    header('HTTP/1.1 304 Not Modified');
                     return;
                 }
 
