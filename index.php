@@ -309,13 +309,13 @@ function handle($data)
                                 "uri" => $contact["cellphone"]
                             ],
                             [
-                                "entryId" => "0",
+                                "entryId" => "3",
                                 "label" => "home email",
                                 "type" => "email",
                                 "uri" => $contact["homeemail"]
                             ],
                             [
-                                "entryId" => "1",
+                                "entryId" => "4",
                                 "label" => "work email",
                                 "type" => "email",
                                 "uri" => $contact["workemail"]
