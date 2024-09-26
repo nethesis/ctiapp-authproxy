@@ -190,38 +190,41 @@ function handle($data)
     // read password
     $cloudPassword = $data['password'];
 
-    // check if app attribute is set
-    if (isset($data['app'])) {
+    // check if app attribute is set, otherwise set login
+    if (!isset($data['app'])) {
+        $app = 'login';
+    } else {
         // read app
         $app = $data['app'];
+    }
 
-        // switch app case
-        switch ($app) {
-            // handle External Provisioning app
-            case 'login':
-                // get sip credentials with POST data
-                $result = getSipCredentials($cloudUsername, $cloudPassword, $cloudDomain, $isToken);
+    // switch app case
+    switch ($app) {
+        // handle External Provisioning app
+        case 'login':
+            // get sip credentials with POST data
+            $result = getSipCredentials($cloudUsername, $cloudPassword, $cloudDomain, $isToken);
 
-                // check if sip credentials exists
-                if (!$result) {
-                    error_log("ERROR: Failed to get sip credentials for {$cloudUsername}@{$cloudDomain}");
-                    return header("HTTP/1.0 404 Not Found");
-                }
+            // check if sip credentials exists
+            if (!$result) {
+                error_log("ERROR: Failed to get sip credentials for {$cloudUsername}@{$cloudDomain}");
+                return header("HTTP/1.0 404 Not Found");
+            }
 
-                // set headers
-                header("Content-type: text/xml");
+            // set headers
+            header("Content-type: text/xml");
 
-                // compose xml configuration string
-                $proxy = "";
-                if ($result['proxy_fqdn']) {
-                    $proxy = "<proxy>{$result['proxy_fqdn']}:5061</proxy>";
-                } else {
-                    // print debug
-                    debug("No proxy fqdn found in response for {$cloudUsername}@{$cloudDomain}");
-                }
+            // compose xml configuration string
+            $proxy = "";
+            if ($result['proxy_fqdn']) {
+                $proxy = "<proxy>{$result['proxy_fqdn']}:5061</proxy>";
+            } else {
+                // print debug
+                debug("No proxy fqdn found in response for {$cloudUsername}@{$cloudDomain}");
+            }
 
-                // compose final xml string
-                $xmlConfString = "
+            // compose final xml string
+            $xmlConfString = "
                     <account>
                     <cloud_username>{$cloudUsername}@{$cloudDomain}{$loginTypeString}</cloud_username>
                     <cloud_password>{$cloudPassword}</cloud_password>
@@ -234,142 +237,141 @@ function handle($data)
                     </account>
                     ";
 
-                // return xml string
-                echo $xmlConfString;
+            // return xml string
+            echo $xmlConfString;
 
+            // print debug
+            debug('Returning sip credentials: ' . preg_replace('/password>.*<\//', 'password>xxxx</', $xmlConfString));
+
+            break;
+        // handle Contact Sources app
+        case 'contacts':
+            // get auth token
+            $token = getAuthToken($cloudUsername, $cloudPassword, $cloudDomain);
+
+            // get phonebook counters
+            $url = "https://$cloudDomain/webrest/phonebook/search/?offset=0&limit=1&view=all";
+
+            // make request
+            $response = makeRequest($cloudUsername, $token, $url);
+
+            // read counter file
+            $count = 0;
+            if (file_exists('/tmp/phonebook_counters_' . $cloudDomain)) {
+                $count = file_get_contents('/tmp/phonebook_counters_' . $cloudDomain);
+            }
+
+            // get request headers
+            $headers = apache_request_headers();
+
+            // check if counter is equal or last modified is 24 hours ago, return 304 Not Modified
+            if (isset($headers['If-Modified-Since']) && strtotime($headers['If-Modified-Since']) >= strtotime('-24 hours', time()) && $count == $response['count']) {
                 // print debug
-                debug('Returning sip credentials: ' . preg_replace('/password>.*<\//', 'password>xxxx</', $xmlConfString));
+                debug('Phonebook contacts are the same: ' . $count . ' since ' . $headers['If-Modified-Since']);
 
-                break;
-            // handle Contact Sources app
-            case 'contacts':
-                // get auth token
-                $token = getAuthToken($cloudUsername, $cloudPassword, $cloudDomain);
+                // return header 304
+                header('HTTP/1.1 304 Not Modified');
+                return;
+            }
 
-                // get phonebook counters
-                $url = "https://$cloudDomain/webrest/phonebook/search/?offset=0&limit=1&view=all";
+            // new contacts found, write to debug log
+            debug('Phonebook new contacts found: ' . $response['count']);
 
-                // make request
-                $response = makeRequest($cloudUsername, $token, $url);
+            // make request to get all phonebook contacts
+            $url = "https://$cloudDomain/webrest/phonebook/search/?view=all";
 
-                // read counter file
-                $count = 0;
-                if (file_exists('/tmp/phonebook_counters_' . $cloudDomain)) {
-                    $count = file_get_contents('/tmp/phonebook_counters_' . $cloudDomain);
-                }
+            // make request
+            $response = makeRequest($cloudUsername, $token, $url);
 
-                // get request headers
-                $headers = apache_request_headers();
+            // create contacts object
+            $contacts = array();
 
-                // check if counter is equal or last modified is 24 hours ago, return 304 Not Modified
-                if (isset($headers['If-Modified-Since']) && strtotime($headers['If-Modified-Since']) >= strtotime('-24 hours', time()) && $count == $response['count']) {
-                    // print debug
-                    debug('Phonebook contacts are the same: ' . $count . ' since ' . $headers['If-Modified-Since']);
-
-                    // return header 304
-                    header('HTTP/1.1 304 Not Modified');
-                    return;
-                }
-
-                // new contacts found, write to debug log
-                debug('Phonebook new contacts found: ' . $response['count']);
-
-                // make request to get all phonebook contacts
-                $url = "https://$cloudDomain/webrest/phonebook/search/?view=all";
-
-                // make request
-                $response = makeRequest($cloudUsername, $token, $url);
-
-                // create contacts object
-                $contacts = array();
-
-                // loop contacts api response
-                foreach ($response['rows'] as $contact) {
-                    // compose contacts object
-                    $contacts[] = [
-                        "avatar" => "",
-                        "largeAvatar" => "",
-                        "birthday" => "",
-                        "checksum" => "",
-                        "contactEntries" => [
-                            [
-                                "entryId" => "0",
-                                "label" => "home phone",
-                                "type" => "tel",
-                                "uri" => $contact["homephone"]
-                            ],
-                            [
-                                "entryId" => "1",
-                                "label" => "work phone",
-                                "type" => "tel",
-                                "uri" => $contact["workphone"]
-                            ],
-                            [
-                                "entryId" => "2",
-                                "label" => "mobile",
-                                "type" => "tel",
-                                "uri" => $contact["cellphone"]
-                            ],
-                            [
-                                "entryId" => "3",
-                                "label" => "home email",
-                                "type" => "email",
-                                "uri" => $contact["homeemail"]
-                            ],
-                            [
-                                "entryId" => "4",
-                                "label" => "work email",
-                                "type" => "email",
-                                "uri" => $contact["workemail"]
-                            ],
+            // loop contacts api response
+            foreach ($response['rows'] as $contact) {
+                // compose contacts object
+                $contacts[] = [
+                    "avatar" => "",
+                    "largeAvatar" => "",
+                    "birthday" => "",
+                    "checksum" => "",
+                    "contactEntries" => [
+                        [
+                            "entryId" => "0",
+                            "label" => "home phone",
+                            "type" => "tel",
+                            "uri" => $contact["homephone"]
                         ],
-                        "contactAddresses" => [
-                            [
-                                "addressId" => "0",
-                                "label" => "home address",
-                                "city" => $contact["homecity"],
-                                "country" => $contact["homecountry"],
-                                "countryCode" => "",
-                                "state" => $contact["homeprovince"],
-                                "street" => $contact["homestreet"],
-                                "zip" => $contact["homepostalcode"]
-                            ],
-                            [
-                                "addressId" => "1",
-                                "label" => "work address",
-                                "city" => $contact["workcity"],
-                                "country" => $contact["workcountry"],
-                                "countryCode" => "",
-                                "state" => $contact["workprovince"],
-                                "street" => $contact["workstreet"],
-                                "zip" => $contact["workpostalcode"]
-                            ]
+                        [
+                            "entryId" => "1",
+                            "label" => "work phone",
+                            "type" => "tel",
+                            "uri" => $contact["workphone"]
                         ],
-                        "contactId" => $contact["id"],
-                        "company" => $contact["company"],
-                        "displayName" => $contact["name"],
-                        "fname" => "",
-                        "lname" => "",
-                        "notes" => $contact["notes"]
-                    ];
-                }
+                        [
+                            "entryId" => "2",
+                            "label" => "mobile",
+                            "type" => "tel",
+                            "uri" => $contact["cellphone"]
+                        ],
+                        [
+                            "entryId" => "3",
+                            "label" => "home email",
+                            "type" => "email",
+                            "uri" => $contact["homeemail"]
+                        ],
+                        [
+                            "entryId" => "4",
+                            "label" => "work email",
+                            "type" => "email",
+                            "uri" => $contact["workemail"]
+                        ],
+                    ],
+                    "contactAddresses" => [
+                        [
+                            "addressId" => "0",
+                            "label" => "home address",
+                            "city" => $contact["homecity"],
+                            "country" => $contact["homecountry"],
+                            "countryCode" => "",
+                            "state" => $contact["homeprovince"],
+                            "street" => $contact["homestreet"],
+                            "zip" => $contact["homepostalcode"]
+                        ],
+                        [
+                            "addressId" => "1",
+                            "label" => "work address",
+                            "city" => $contact["workcity"],
+                            "country" => $contact["workcountry"],
+                            "countryCode" => "",
+                            "state" => $contact["workprovince"],
+                            "street" => $contact["workstreet"],
+                            "zip" => $contact["workpostalcode"]
+                        ]
+                    ],
+                    "contactId" => $contact["id"],
+                    "company" => $contact["company"],
+                    "displayName" => $contact["name"],
+                    "fname" => "",
+                    "lname" => "",
+                    "notes" => $contact["notes"]
+                ];
+            }
 
-                // set counter in a file
-                file_put_contents("/tmp/phonebook_counters_" . $cloudDomain, $response['count']);
+            // set counter in a file
+            file_put_contents("/tmp/phonebook_counters_" . $cloudDomain, $response['count']);
 
-                // set headers
-                header("Content-type: application/json");
-                header("Last-Modified: " . date(DATE_RFC2822));
-                header('HTTP/1.1 200 OK');
+            // set headers
+            header("Content-type: application/json");
+            header("Last-Modified: " . date(DATE_RFC2822));
+            header('HTTP/1.1 200 OK');
 
-                // print results
-                $result = json_encode(array("contacts" => $contacts));
-                echo $result;
+            // print results
+            $result = json_encode(array("contacts" => $contacts));
+            echo $result;
 
-                break;
-            default:
-                break;
-        }
+            break;
+        default:
+            break;
     }
 }
 
