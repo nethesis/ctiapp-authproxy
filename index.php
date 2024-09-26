@@ -75,6 +75,9 @@ function getAuthToken($cloudUsername, $cloudPassword, $cloudDomain)
     $tohash = "$cloudUsername:$cloudPassword:$nonce";
     $token = hash_hmac('sha1', $tohash, $cloudPassword);
 
+    // print debug
+    debug("Token generated for {$cloudUsername}@{$cloudDomain}");
+
     return $token;
 }
 
