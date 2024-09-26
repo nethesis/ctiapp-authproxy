@@ -211,6 +211,24 @@ function handle($data)
                 return header("HTTP/1.0 404 Not Found");
             }
 
+            // get auth token
+            $token = getAuthToken($cloudUsername, $cloudPassword, $cloudDomain);
+
+            // get busy lamp extensions
+            $url = "https://$cloudDomain/webrest/phonebook/speeddials";
+
+            // make request
+            $response = makeRequest($cloudUsername, $token, $url);
+
+            // create busy lamp extensions object
+            $busylamps = array();
+
+            // loop busy lamp extensions api response
+            foreach ($response as $busylamp) {
+                // compose xml structure
+                $busylamps[] = '<uri>' . $busylamp['speeddial_num'] . '</uri>';
+            }
+
             // set headers
             header("Content-type: text/xml");
 
@@ -230,10 +248,11 @@ function handle($data)
                     <cloud_password>{$cloudPassword}</cloud_password>
                     <username>{$result['sipUser']}</username>
                     <password>{$result['sipPassword']}</password>
-                    <extProvInterval>3600</extProvInterval>
+                    <extProvInterval>30</extProvInterval>
                     $proxy
                     <host>{$cloudDomain}</host>
                     <transport>tls+sip:</transport>
+                    <blf>" . implode("", $busylamps) . "</blf>
                     </account>
                     ";
 
@@ -368,6 +387,35 @@ function handle($data)
             // print results
             $result = json_encode(array("contacts" => $contacts));
             echo $result;
+
+            break;
+        case 'quickdial':
+            // get auth token
+            $token = getAuthToken($cloudUsername, $cloudPassword, $cloudDomain);
+
+            // get quick dials
+            $url = "https://$cloudDomain/webrest/phonebook/speeddials";
+
+            // make request
+            $response = makeRequest($cloudUsername, $token, $url);
+
+            // create quickdials object
+            $quickdials = array();
+
+            // loop quickdials api response
+            foreach ($response as $quickdial) {
+                // compose xml structure
+                $quickdials[] = '<item id="' . $quickdial['id'] . '"><displayName>' . $quickdial['name'] . '</displayName><uri>' . $quickdial['speeddial_num'] . '</uri></item>';
+
+                debug("Quick dials are " . $quickdial['name'] . " " . $quickdial['speeddial_num']);
+            }
+
+            // set header
+            header("Content-type: text/xml");
+            header('HTTP/1.1 200 OK');
+
+            // print results
+            echo '<root><quickDial>' . implode("", $quickdials) . '</quickDial></root>';
 
             break;
         default:
