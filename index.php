@@ -4,6 +4,14 @@
 # SPDX-License-Identifier: AGPL-3.0
 #
 
+// function to print debug log messagges
+function debug($message)
+{
+    // print deubg if env is set
+    if (getenv('DEBUG') && $_ENV['DEBUG'] === 'true')
+        error_log("DEBUG: " . $message);
+}
+
 // function to make http GET requests
 function makeRequest($username, $token, $url)
 {
@@ -78,13 +86,11 @@ function getSipCredentials($cloudUsername, $cloudPassword, $cloudDomain, $isToke
         // get auth token
         $token = getAuthToken($cloudUsername, $cloudPassword, $cloudDomain);
 
-        // print debug log
-        if (getenv('DEBUG') && $_ENV['DEBUG'] === 'true')
-            error_log("DEBUG: Token generated for {$cloudUsername}@{$cloudDomain}");
+        // print debug
+        debug("Token generated for {$cloudUsername}@{$cloudDomain}");
     } else {
-        // print debug string
-        if (getenv('DEBUG') && $_ENV['DEBUG'] === 'true')
-            error_log("DEBUG: Password is already a token for {$cloudUsername}@{$cloudDomain}");
+        // print debug
+        debug("Password is already a token for {$cloudUsername}@{$cloudDomain}");
 
         // assign password as token
         $token = $cloudPassword;
@@ -114,9 +120,8 @@ function getSipCredentials($cloudUsername, $cloudPassword, $cloudDomain, $isToke
         $httpCode = curl_getinfo($ch, CURLINFO_HTTP_CODE);
         curl_close($ch);
 
-        // print debug string
-        if (getenv('DEBUG') && $_ENV['DEBUG'] === 'true')
-            error_log("DEBUG: lkhash validated for {$cloudUsername}@{$cloudDomain}");
+        // print debug
+        debug("lkhash validated for {$cloudUsername}@{$cloudDomain}");
 
         // check if return code is 200, otherwise return false
         if ($httpCode !== 200) {
@@ -173,9 +178,8 @@ function handle($data)
         $isToken = true;
         $loginTypeString = "@qrcode";
 
-        // print debug log
-        if (getenv('DEBUG') && $_ENV['DEBUG'] === 'true')
-            error_log("DEBUG: Using qrcode login for {$cloudUsername}@{$cloudDomain}");
+        // print debug
+        debug("Using qrcode login for {$cloudUsername}@{$cloudDomain}");
     } else {
         $isToken = false;
         $loginTypeString = "";
@@ -212,8 +216,8 @@ function handle($data)
                 } elseif ($result['nv8']) { // TODO remove when nethcti-server is updated
                     $proxy = "<proxy>{$cloudDomain}:5061</proxy>";
                 } else {
-                    if (getenv('DEBUG') && $_ENV['DEBUG'] === 'true')
-                        error_log("DEBUG: No proxy fqdn found in response for {$cloudUsername}@{$cloudDomain}");
+                    // print debug
+                    debug("No proxy fqdn found in response for {$cloudUsername}@{$cloudDomain}");
                 }
 
                 // compose final xml string
@@ -233,9 +237,8 @@ function handle($data)
                 // return xml string
                 echo $xmlConfString;
 
-                // print debug string
-                if (getenv('DEBUG') && $_ENV['DEBUG'] === 'true')
-                    error_log('DEBUG: Returning sip credentials: ' . preg_replace('/password>.*<\//', 'password>xxxx</', $xmlConfString));
+                // print debug
+                debug('Returning sip credentials: ' . preg_replace('/password>.*<\//', 'password>xxxx</', $xmlConfString));
 
                 break;
             // handle Contact Sources app
@@ -260,17 +263,16 @@ function handle($data)
 
                 // check if counter is equal or last modified is 24 hours ago, return 304 Not Modified
                 if (isset($headers['If-Modified-Since']) && strtotime($headers['If-Modified-Since']) >= strtotime('-24 hours', time()) && $count == $response['count']) {
-                    if (getenv('DEBUG') && $_ENV['DEBUG'] === 'true')
-                        error_log('DEBUG: Phonebook contacts are the same: ' . $count . ' since ' . $headers['If-Modified-Since']);
+                    // print debug
+                    debug('Phonebook contacts are the same: ' . $count . ' since ' . $headers['If-Modified-Since']);
 
                     // return header 304
                     header('HTTP/1.1 304 Not Modified');
                     return;
                 }
 
-                // new contacts found, write to log
-                if (getenv('DEBUG') && $_ENV['DEBUG'] === 'true')
-                    error_log('DEBUG: Phonebook new contacts found: ' . $response['count']);
+                // new contacts found, write to debug log
+                debug('Phonebook new contacts found: ' . $response['count']);
 
                 // make request to get all phonebook contacts
                 $url = "https://$cloudDomain/webrest/phonebook/search/?view=all";
