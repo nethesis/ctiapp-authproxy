@@ -404,10 +404,13 @@ function handle($data)
 
             // loop quickdials api response
             foreach ($response as $quickdial) {
-                // compose xml structure
-                $quickdials[] = '<item id="' . $quickdial['id'] . '"><displayName>' . $quickdial['name'] . '</displayName><uri>' . $quickdial['speeddial_num'] . '</uri></item>';
+                // check if type is speeddial-favorite
+                if ($quickdial['notes'] == 'speeddial-favorite') {
+                    // compose xml structure
+                    $quickdials[] = '<item id="' . $quickdial['id'] . '"><displayName>' . $quickdial['name'] . '</displayName><uri>' . $quickdial['speeddial_num'] . '</uri></item>';
 
-                debug("Quick dials are " . $quickdial['name'] . " " . $quickdial['speeddial_num']);
+                    debug("Quick dials is a favorite: " . $quickdial['name'] . " " . $quickdial['speeddial_num']);
+                }
             }
 
             // set header
