@@ -215,7 +215,7 @@ function handle($data)
             $token = getAuthToken($cloudUsername, $cloudPassword, $cloudDomain);
 
             // get busy lamp extensions
-            $url = "https://$cloudDomain/webrest/phonebook/speeddials";
+            $url = "https://$cloudDomain/webrest/astproxy/extensions";
 
             // make request
             $response = makeRequest($cloudUsername, $token, $url);
@@ -224,9 +224,9 @@ function handle($data)
             $busylamps = array();
 
             // loop busy lamp extensions api response
-            foreach ($response as $busylamp) {
+            foreach (array_keys($response) as $busylamp) {
                 // compose xml structure
-                $busylamps[] = '<uri>' . $busylamp['speeddial_num'] . '</uri>';
+                $busylamps[] = '<uri>' . $busylamp . '</uri>';
             }
 
             // set headers
@@ -248,7 +248,7 @@ function handle($data)
                     <cloud_password>{$cloudPassword}</cloud_password>
                     <username>{$result['sipUser']}</username>
                     <password>{$result['sipPassword']}</password>
-                    <extProvInterval>30</extProvInterval>
+                    <extProvInterval>3600</extProvInterval>
                     $proxy
                     <host>{$cloudDomain}</host>
                     <transport>tls+sip:</transport>
