@@ -402,14 +402,44 @@ function handle($data)
             // create quickdials object
             $quickdials = array();
 
+            // create favorite list
+            $favorites = array();
+
             // loop quickdials api response
             foreach ($response as $quickdial) {
                 // check if type is speeddial-favorite
                 if ($quickdial['notes'] == 'speeddial-favorite') {
                     // compose xml structure
-                    $quickdials[] = '<item id="' . $quickdial['id'] . '"><displayName>' . $quickdial['name'] . '</displayName><uri>' . $quickdial['speeddial_num'] . '</uri></item>';
+                    $quickdials[] = '<item id="' . $quickdial['speeddial_num'] . '"><displayName>' . $quickdial['company'] . '</displayName><uri>' . $quickdial['speeddial_num'] . '</uri></item>';
 
-                    debug("Quick dials is a favorite: " . $quickdial['name'] . " " . $quickdial['speeddial_num']);
+                    // add favorite num to list, useful to check extensions to remove from list
+                    $favorites[] = $quickdial['speeddial_num'];
+
+                    // print debug message
+                    debug("Quick dials is a favorite: " . $quickdial['company'] . " " . $quickdial['speeddial_num']);
+                }
+            }
+
+            // get all extensions
+            $url = "https://$cloudDomain/webrest/astproxy/extensions";
+
+            // make request
+            $response = makeRequest($cloudUsername, $token, $url);
+
+            // get keys of response
+            $extensions = array_keys($response);
+
+            // create remove keys
+            $removes = array();
+
+            // loop extensions to remove
+            foreach ($extensions as $extension) {
+                if (!in_array($extension, $favorites)) {
+                    // compose xml structure
+                    $removes[] = '<item id="' . $extension . '" action="remove"/>';
+
+                    // print debug message
+                    debug("Quick dials is not a favorite: " . $extension);
                 }
             }
 
@@ -418,7 +448,7 @@ function handle($data)
             header('HTTP/1.1 200 OK');
 
             // print results
-            echo '<root><quickDial>' . implode("", $quickdials) . '</quickDial></root>';
+            echo '<root><quickDial>' . implode("", $quickdials) . implode("", $removes) . '</quickDial></root>';
 
             break;
         default:
