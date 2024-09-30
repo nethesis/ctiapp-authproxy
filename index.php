@@ -211,6 +211,24 @@ function handle($data)
                 return header("HTTP/1.0 404 Not Found");
             }
 
+            // get auth token
+            $token = getAuthToken($cloudUsername, $cloudPassword, $cloudDomain);
+
+            // get busy lamp extensions
+            $url = "https://$cloudDomain/webrest/astproxy/extensions";
+
+            // make request
+            $response = makeRequest($cloudUsername, $token, $url);
+
+            // create busy lamp extensions object
+            $busylamps = array();
+
+            // loop busy lamp extensions api response
+            foreach (array_keys($response) as $busylamp) {
+                // compose xml structure
+                $busylamps[] = '<uri>' . $busylamp . '</uri>';
+            }
+
             // set headers
             header("Content-type: text/xml");
 
@@ -234,6 +252,7 @@ function handle($data)
                     $proxy
                     <host>{$cloudDomain}</host>
                     <transport>tls+sip:</transport>
+                    <blf>" . implode("", $busylamps) . "</blf>
                     </account>
                     ";
 
@@ -368,6 +387,68 @@ function handle($data)
             // print results
             $result = json_encode(array("contacts" => $contacts));
             echo $result;
+
+            break;
+        case 'quickdial':
+            // get auth token
+            $token = getAuthToken($cloudUsername, $cloudPassword, $cloudDomain);
+
+            // get quick dials
+            $url = "https://$cloudDomain/webrest/phonebook/speeddials";
+
+            // make request
+            $response = makeRequest($cloudUsername, $token, $url);
+
+            // create quickdials object
+            $quickdials = array();
+
+            // create favorite list
+            $favorites = array();
+
+            // loop quickdials api response
+            foreach ($response as $quickdial) {
+                // check if type is speeddial-favorite
+                if ($quickdial['notes'] == 'speeddial-favorite') {
+                    // compose xml structure
+                    $quickdials[] = '<item id="' . $quickdial['speeddial_num'] . '"><displayName>' . $quickdial['company'] . '</displayName><uri>' . $quickdial['speeddial_num'] . '</uri></item>';
+
+                    // add favorite num to list, useful to check extensions to remove from list
+                    $favorites[] = $quickdial['speeddial_num'];
+
+                    // print debug message
+                    debug("Quick dials is a favorite: " . $quickdial['company'] . " " . $quickdial['speeddial_num']);
+                }
+            }
+
+            // get all extensions
+            $url = "https://$cloudDomain/webrest/astproxy/extensions";
+
+            // make request
+            $response = makeRequest($cloudUsername, $token, $url);
+
+            // get keys of response
+            $extensions = array_keys($response);
+
+            // create remove keys
+            $removes = array();
+
+            // loop extensions to remove
+            foreach ($extensions as $extension) {
+                if (!in_array($extension, $favorites)) {
+                    // compose xml structure
+                    $removes[] = '<item id="' . $extension . '" action="remove"/>';
+
+                    // print debug message
+                    debug("Quick dials is not a favorite: " . $extension);
+                }
+            }
+
+            // set header
+            header("Content-type: text/xml");
+            header('HTTP/1.1 200 OK');
+
+            // print results
+            echo '<root><quickDial>' . implode("", $quickdials) . implode("", $removes) . '</quickDial></root>';
 
             break;
         default:
