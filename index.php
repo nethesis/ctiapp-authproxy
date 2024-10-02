@@ -278,7 +278,19 @@ function handle($data)
         // handle Contact Sources app
         case 'contacts':
             // get auth token
-            $token = getAuthToken($cloudUsername, $cloudPassword, $cloudDomain);
+            if (!$isToken) {
+                // get auth token
+                $token = getAuthToken($cloudUsername, $cloudPassword, $cloudDomain);
+
+                // print debug
+                debug("Contacts. Token generated for {$cloudUsername}@{$cloudDomain}");
+            } else {
+                // print debug
+                debug("Contacts. Password is already a token for {$cloudUsername}@{$cloudDomain}");
+
+                // assign password as token
+                $token = $cloudPassword;
+            }
 
             // get phonebook counters
             $url = "https://$cloudDomain/webrest/phonebook/search/?offset=0&limit=1&view=all";
@@ -403,7 +415,19 @@ function handle($data)
             break;
         case 'quickdial':
             // get auth token
-            $token = getAuthToken($cloudUsername, $cloudPassword, $cloudDomain);
+            if (!$isToken) {
+                // get auth token
+                $token = getAuthToken($cloudUsername, $cloudPassword, $cloudDomain);
+
+                // print debug
+                debug("QuickDials. Token generated for {$cloudUsername}@{$cloudDomain}");
+            } else {
+                // print debug
+                debug("QuickDials. Password is already a token for {$cloudUsername}@{$cloudDomain}");
+
+                // assign password as token
+                $token = $cloudPassword;
+            }
 
             // get quick dials
             $url = "https://$cloudDomain/webrest/phonebook/speeddials";
