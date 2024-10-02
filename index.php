@@ -211,8 +211,20 @@ function handle($data)
                 return header("HTTP/1.0 404 Not Found");
             }
 
-            // get auth token
-            $token = getAuthToken($cloudUsername, $cloudPassword, $cloudDomain);
+            // check auth token
+            if (!$isToken) {
+                // get auth token
+                $token = getAuthToken($cloudUsername, $cloudPassword, $cloudDomain);
+
+                // print debug
+                debug("Token generated for {$cloudUsername}@{$cloudDomain}");
+            } else {
+                // print debug
+                debug("Password is already a token for {$cloudUsername}@{$cloudDomain}");
+
+                // assign password as token
+                $token = $cloudPassword;
+            }
 
             // get busy lamp extensions
             $url = "https://$cloudDomain/webrest/astproxy/extensions";
