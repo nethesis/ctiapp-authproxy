@@ -1,4 +1,12 @@
 name: ctiapp-authproxy
+ingress:
+  rules:
+  - component:
+      name: ctiapp-authproxy
+      rewrite: /index.php/healthcheck
+    match:
+      path:
+        prefix: /healthcheck
 services:
 - environment_slug: php
   github:
