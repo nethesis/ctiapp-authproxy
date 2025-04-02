@@ -477,6 +477,10 @@ function handle($data)
             $response = makeRequest($cloudUsername, $token, $url);
 
             // get keys of response
+            if (!is_array($response)) {
+                // No extensions returned, return 200 OK
+                return header('HTTP/1.1 200 OK');
+            }
             $extensions = array_keys($response);
 
             // create remove keys
