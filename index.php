@@ -510,6 +510,12 @@ function handle($data)
     }
 }
 
+// Check if this is a healthcheck request
+if ($_SERVER['REQUEST_URI'] === '/index.php/healthcheck') {
+    header('HTTP/1.1 200 OK');
+    exit;
+}
+
 // read json from input
 $jsonData = file_get_contents('php://input');
 
