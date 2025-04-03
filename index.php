@@ -456,17 +456,19 @@ function handle($data)
             $favorites = array();
 
             // loop quickdials api response
-            foreach ($response as $quickdial) {
-                // check if type is speeddial-favorite
-                if ($quickdial['notes'] == 'speeddial-favorite') {
-                    // compose xml structure
-                    $quickdials[] = '<item id="' . $quickdial['speeddial_num'] . '"><displayName>' . $quickdial['company'] . '</displayName><uri>' . $quickdial['speeddial_num'] . '</uri></item>';
+            if (is_array($response)) {
+                foreach ($response as $quickdial) {
+                    // check if type is speeddial-favorite
+                    if ($quickdial['notes'] == 'speeddial-favorite') {
+                        // compose xml structure
+                        $quickdials[] = '<item id="' . $quickdial['speeddial_num'] . '"><displayName>' . $quickdial['company'] . '</displayName><uri>' . $quickdial['speeddial_num'] . '</uri></item>';
 
-                    // add favorite num to list, useful to check extensions to remove from list
-                    $favorites[] = $quickdial['speeddial_num'];
+                        // add favorite num to list, useful to check extensions to remove from list
+                        $favorites[] = $quickdial['speeddial_num'];
 
-                    // print debug message
-                    debug("Quick dials is a favorite: " . $quickdial['company'] . " " . $quickdial['speeddial_num']);
+                        // print debug message
+                        debug("Quick dials is a favorite: " . $quickdial['company'] . " " . $quickdial['speeddial_num']);
+                    }
                 }
             }
 
@@ -476,24 +478,22 @@ function handle($data)
             // make request
             $response = makeRequest($cloudUsername, $token, $url);
 
-            // get keys of response
-            if (!is_array($response)) {
-                // No extensions returned, return 200 OK
-                return header('HTTP/1.1 200 OK');
-            }
-            $extensions = array_keys($response);
-
             // create remove keys
             $removes = array();
 
-            // loop extensions to remove
-            foreach ($extensions as $extension) {
-                if (!in_array($extension, $favorites)) {
-                    // compose xml structure
-                    $removes[] = '<item id="' . $extension . '" action="remove"/>';
+            // get keys of response
+            if (is_array($response)) {
+                $extensions = array_keys($response);
 
-                    // print debug message
-                    debug("Quick dials is not a favorite: " . $extension);
+                // loop extensions to remove
+                foreach ($extensions as $extension) {
+                    if (!in_array($extension, $favorites)) {
+                        // compose xml structure
+                        $removes[] = '<item id="' . $extension . '" action="remove"/>';
+
+                        // print debug message
+                        debug("Quick dials is not a favorite: " . $extension);
+                    }
                 }
             }
 
