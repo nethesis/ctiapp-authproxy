@@ -4,11 +4,11 @@
 # SPDX-License-Identifier: AGPL-3.0
 #
 
-// function to print debug log messagges
+// function to print debug log messages
 function debug($message)
 {
-    // print deubg if env is set
-    if (getenv('DEBUG') && $_ENV['DEBUG'] === 'true')
+    // print debug if env is set
+    if (getenv('DEBUG') && getenv('DEBUG') === 'true')
         error_log("DEBUG: " . $message);
 }
 
@@ -27,10 +27,16 @@ function makeRequest($username, $token, $url)
     curl_close($ch);
 
     // read response
-    $response = json_decode($response, true);
+    $jsonResponse = json_decode($response, true);
+
+    // Check if JSON decoding was successful
+    if ($jsonResponse === null && json_last_error() !== JSON_ERROR_NONE) {
+        error_log("ERROR: Failed to decode JSON: " . json_last_error_msg());
+        return false;
+    }
 
     // return response
-    return $response;
+    return $jsonResponse;
 }
 
 // function get auth token
@@ -50,13 +56,21 @@ function getAuthToken($cloudUsername, $cloudPassword, $cloudDomain)
 
     // get response
     $response = curl_exec($ch);
+
+    // Add error handling for curl execution
+    if ($response === false) {
+        error_log("ERROR: cURL error during authentication: " . curl_error($ch));
+        curl_close($ch);
+        return false;
+    }
+
     $httpCode = curl_getinfo($ch, CURLINFO_HTTP_CODE);
 
     // close curl and read response
     curl_close($ch);
     if ($httpCode !== 401) {
         error_log("ERROR: Authentication failed for {$cloudUsername}@{$cloudDomain}. Expected HTTP code 401, got $httpCode");
-        return False;
+        return false;
     }
 
     // extract the nonce from the response header
@@ -65,7 +79,7 @@ function getAuthToken($cloudUsername, $cloudPassword, $cloudDomain)
     // if nonce is empty, return error
     if (!isset($matches[1])) {
         error_log("ERROR: Authentication failed for {$cloudUsername}@{$cloudDomain}. No nonce found in response");
-        return False;
+        return false;
     }
 
     // read nonce
@@ -463,6 +477,10 @@ function handle($data)
             $response = makeRequest($cloudUsername, $token, $url);
 
             // get keys of response
+            if (!is_array($response)) {
+                // No extensions returned, return 200 OK
+                return header('HTTP/1.1 200 OK');
+            }
             $extensions = array_keys($response);
 
             // create remove keys
@@ -490,6 +508,12 @@ function handle($data)
         default:
             break;
     }
+}
+
+// Check if this is a healthcheck request
+if ($_SERVER['REQUEST_URI'] === '/index.php/healthcheck') {
+    header('HTTP/1.1 200 OK');
+    exit;
 }
 
 // read json from input

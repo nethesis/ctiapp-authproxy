@@ -1,4 +1,18 @@
 name: ctiapp-authproxy
+ingress:
+  rules:
+  - component:
+      name: ctiapp-authproxy
+      preserve_path_prefix: true
+    match:
+      path:
+        prefix: /
+  - component:
+      name: ctiapp-authproxy
+      rewrite: /index.php/healthcheck
+    match:
+      path:
+        prefix: /healthcheck
 services:
 - environment_slug: php
   github:
@@ -6,3 +20,5 @@ services:
     deploy_on_push: true
     repo: nethesis/ctiapp-authproxy
   name: ctiapp-authproxy
+  health_check:
+    http_path: /index.php/healthcheck
