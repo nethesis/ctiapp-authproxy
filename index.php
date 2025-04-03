@@ -165,6 +165,7 @@ function getSipCredentials($cloudUsername, $cloudPassword, $cloudDomain, $isToke
     }
 
     // if step 4 has no endpoints, return false
+    debug("No endpoints found for {$cloudUsername}@{$cloudDomain}");
     return false;
 }
 
@@ -312,6 +313,12 @@ function handle($data)
 
             // make request
             $response = makeRequest($cloudUsername, $token, $url);
+
+            if ($response == false) {
+                debug("ERROR: Failed to get phonebook contacts for {$cloudUsername}@{$cloudDomain}");
+                header("HTTP/1.0 404 Not Found");
+                return;
+            }
 
             // read counter file
             $count = 0;
