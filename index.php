@@ -24,7 +24,7 @@ function makeRequest($username, $token, $url)
     $headers = array("Authorization: $username:$token");
     curl_setopt($ch, CURLOPT_HTTPHEADER, $headers);
     $response = curl_exec($ch);
-        curl_close($ch);
+    curl_close($ch);
 
     // read response
     $jsonResponse = json_decode($response, true);
