@@ -243,7 +243,7 @@ function handle($data)
             }
 
             // get busy lamp extensions
-            $url = "https://$cloudDomain/webrest/astproxy/extensions";
+            $url = "https://$cloudDomain/webrest/user/endpoints/all";
 
             // make request
             $response = makeRequest($cloudUsername, $token, $url);
@@ -252,7 +252,10 @@ function handle($data)
             $busylamps = array();
 
             // loop busy lamp extensions api response
-            foreach (array_keys($response) as $busylamp) {
+            foreach ($response as $username) {
+                // get main extension as busylamp
+                $busylamp = $username['endpoints']['mainextension'][0]['id'];
+
                 // compose xml structure
                 $busylamps[] = '<uri>' . $busylamp . '</uri>';
             }
