@@ -296,6 +296,7 @@ function handle($data)
             break;
         // handle Contact Sources app
         case 'contacts':
+
             // get auth token
             if (!$isToken) {
                 // get auth token
@@ -345,97 +346,154 @@ function handle($data)
             // new contacts found, write to debug log
             debug('Phonebook new contacts found: ' . $response['count']);
 
-            // make request to get all phonebook contacts
-            $url = "https://$cloudDomain/webrest/phonebook/search/?view=all";
-
-            // make request
-            $response = makeRequest($cloudUsername, $token, $url);
-
-            // create contacts object
-            $contacts = array();
-
-            // loop contacts api response
-            foreach ($response['rows'] as $contact) {
-                // compose contacts object
-                $contacts[] = [
-                    "avatar" => "",
-                    "largeAvatar" => "",
-                    "birthday" => "",
-                    "checksum" => "",
-                    "contactEntries" => [
-                        [
-                            "entryId" => "0",
-                            "label" => "home phone",
-                            "type" => "tel",
-                            "uri" => $contact["homephone"]
-                        ],
-                        [
-                            "entryId" => "1",
-                            "label" => "work phone",
-                            "type" => "tel",
-                            "uri" => $contact["workphone"]
-                        ],
-                        [
-                            "entryId" => "2",
-                            "label" => "mobile",
-                            "type" => "tel",
-                            "uri" => $contact["cellphone"]
-                        ],
-                        [
-                            "entryId" => "3",
-                            "label" => "home email",
-                            "type" => "email",
-                            "uri" => $contact["homeemail"]
-                        ],
-                        [
-                            "entryId" => "4",
-                            "label" => "work email",
-                            "type" => "email",
-                            "uri" => $contact["workemail"]
-                        ],
-                    ],
-                    "contactAddresses" => [
-                        [
-                            "addressId" => "0",
-                            "label" => "home address",
-                            "city" => $contact["homecity"],
-                            "country" => $contact["homecountry"],
-                            "countryCode" => "",
-                            "state" => $contact["homeprovince"],
-                            "street" => $contact["homestreet"],
-                            "zip" => $contact["homepostalcode"]
-                        ],
-                        [
-                            "addressId" => "1",
-                            "label" => "work address",
-                            "city" => $contact["workcity"],
-                            "country" => $contact["workcountry"],
-                            "countryCode" => "",
-                            "state" => $contact["workprovince"],
-                            "street" => $contact["workstreet"],
-                            "zip" => $contact["workpostalcode"]
-                        ]
-                    ],
-                    "contactId" => $contact["id"],
-                    "company" => $contact["company"],
-                    "displayName" => $contact["name"],
-                    "fname" => "",
-                    "lname" => "",
-                    "notes" => $contact["notes"]
-                ];
-            }
+            // get total contacts count
+            $totalContacts = $response['count'];
+            $chunkSize = 1000;
+            $offset = 0;
 
             // set counter in a file
-            file_put_contents("/tmp/phonebook_counters_" . $cloudDomain, $response['count']);
+            file_put_contents("/tmp/phonebook_counters_" . $cloudDomain, $totalContacts);
 
             // set headers
             header("Content-type: application/json");
             header("Last-Modified: " . date(DATE_RFC2822));
             header('HTTP/1.1 200 OK');
 
-            // print results
-            $result = json_encode(array("contacts" => $contacts));
-            echo $result;
+            // start gzip compression if available
+            if (function_exists('ob_gzhandler') && !headers_sent()) {
+                ob_start("ob_gzhandler");
+            } else {
+                ob_start();
+            }
+
+            // start streaming JSON output
+            echo '{"contacts":[';
+            $firstContact = true;
+
+            // process contacts in chunks to avoid memory exhaustion
+            $chunkNumber = 1;
+            $totalChunks = ceil($totalContacts / $chunkSize);
+            while ($offset < $totalContacts) {
+                // make chunked request to get phonebook contacts
+                $url = "https://$cloudDomain/webrest/phonebook/search/?view=all&limit=$chunkSize&offset=$offset";
+
+                // make request
+                $chunkResponse = makeRequest($cloudUsername, $token, $url);
+
+                if ($chunkResponse === false || !isset($chunkResponse['rows'])) {
+                    debug("ERROR: Failed to get phonebook chunk at offset $offset for {$cloudUsername}@{$cloudDomain}");
+                    break;
+                }
+
+                // loop contacts in current chunk
+                foreach ($chunkResponse['rows'] as $contact) {
+                    if (!$firstContact) {
+                        echo ',';
+                    }
+
+                    // compose contact object
+                    $contactData = [
+                        "avatar" => "",
+                        "largeAvatar" => "",
+                        "birthday" => "",
+                        "checksum" => "",
+                        "contactEntries" => [
+                            [
+                                "entryId" => "0",
+                                "label" => "home phone",
+                                "type" => "tel",
+                                "uri" => $contact["homephone"]
+                            ],
+                            [
+                                "entryId" => "1",
+                                "label" => "work phone",
+                                "type" => "tel",
+                                "uri" => $contact["workphone"]
+                            ],
+                            [
+                                "entryId" => "2",
+                                "label" => "mobile",
+                                "type" => "tel",
+                                "uri" => $contact["cellphone"]
+                            ],
+                            [
+                                "entryId" => "3",
+                                "label" => "home email",
+                                "type" => "email",
+                                "uri" => $contact["homeemail"]
+                            ],
+                            [
+                                "entryId" => "4",
+                                "label" => "work email",
+                                "type" => "email",
+                                "uri" => $contact["workemail"]
+                            ],
+                        ],
+                        "contactAddresses" => [
+                            [
+                                "addressId" => "0",
+                                "label" => "home address",
+                                "city" => $contact["homecity"],
+                                "country" => $contact["homecountry"],
+                                "countryCode" => "",
+                                "state" => $contact["homeprovince"],
+                                "street" => $contact["homestreet"],
+                                "zip" => $contact["homepostalcode"]
+                            ],
+                            [
+                                "addressId" => "1",
+                                "label" => "work address",
+                                "city" => $contact["workcity"],
+                                "country" => $contact["workcountry"],
+                                "countryCode" => "",
+                                "state" => $contact["workprovince"],
+                                "street" => $contact["workstreet"],
+                                "zip" => $contact["workpostalcode"]
+                            ]
+                        ],
+                        "contactId" => $contact["id"],
+                        "company" => $contact["company"],
+                        "displayName" => $contact["name"],
+                        "fname" => "",
+                        "lname" => "",
+                        "notes" => $contact["notes"]
+                    ];
+
+                    // output contact as JSON and immediately free memory
+                    echo json_encode($contactData);
+                    unset($contactData);
+                    $firstContact = false;
+                }
+
+                // move to next chunk
+                $offset += $chunkSize;
+                $chunkNumber++;
+
+                // free chunk memory
+                unset($chunkResponse);
+
+                // run garbage collection every 5000 contacts to free memory
+                if ($offset % 5000 === 0) {
+                    gc_collect_cycles();
+                }
+
+                // flush output buffer periodically for better streaming
+                if ($offset % 2000 === 0) {
+                    ob_flush();
+                    flush();
+                }
+            }
+
+            // close JSON structure
+            echo ']}';
+
+            // flush output buffer safely
+            while (ob_get_level()) {
+                if (!ob_end_flush()) {
+                    break;
+                }
+            }
+            flush();
 
             break;
         case 'quickdial':
