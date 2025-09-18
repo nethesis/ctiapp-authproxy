@@ -296,6 +296,7 @@ function handle($data)
             break;
         // handle Contact Sources app
         case 'contacts':
+            debug("Starting optimized contacts processing for {$cloudUsername}@{$cloudDomain}");
 
             // get auth token
             if (!$isToken) {
@@ -344,7 +345,7 @@ function handle($data)
             }
 
             // new contacts found, write to debug log
-            debug('Phonebook new contacts found: ' . $response['count']);
+            debug('Phonebook contacts found: ' . $response['count'] . ' - starting chunked processing');
 
             // get total contacts count
             $totalContacts = $response['count'];
@@ -486,6 +487,8 @@ function handle($data)
 
             // close JSON structure
             echo ']}';
+
+            debug("Completed optimized contacts processing for {$cloudUsername}@{$cloudDomain} - $totalContacts contacts streamed");
 
             // flush output buffer safely
             while (ob_get_level()) {
