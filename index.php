@@ -361,62 +361,40 @@ function handle($data)
                 return;
             }
 
-            // new contacts found, write to debug log
-            debug('Phonebook contacts found: ' . $response['count'] . ' - starting chunked processing', $cloudDomain);
-
             // get total contacts count
             $totalContacts = $response['count'];
-            $chunkSize = 2000; // Further reduced for Digital Ocean timeout constraints
-            $offset = 0;
+
+            debug("Phonebook contacts found: $totalContacts - fetching all contacts", $cloudDomain);
 
             // set counter in a file
             file_put_contents("/tmp/phonebook_counters_" . $cloudDomain, $totalContacts);
 
-            // set headers for proper streaming with caching support
-            header("Content-type: application/json");
-            header("Last-Modified: " . date(DATE_RFC2822));
-            header("Cache-Control: private, must-revalidate");
-            header('HTTP/1.1 200 OK');
+            // build complete contacts array
+            $allContacts = [];
+            $chunkSize = 2000;
+            $offset = 0;
 
-            // start output buffering for streaming
-            ob_start();
-
-            // start streaming JSON output
-            echo '{"contacts":[';
-            $firstContact = true;
-
-            // process contacts in chunks to avoid memory exhaustion
             $chunkNumber = 1;
             $totalChunks = ceil($totalContacts / $chunkSize);
+            $startTime = microtime(true);
+
             while ($offset < $totalContacts) {
-                // make chunked request to get phonebook contacts
                 $url = "https://$cloudDomain/webrest/phonebook/search/?view=all&limit=$chunkSize&offset=$offset";
 
-                // log chunk progress with timing
-                $startTime = microtime(true);
-                debug("Processing chunk $chunkNumber/$totalChunks (offset $offset)", $cloudDomain);
+                debug("Fetching page $chunkNumber/$totalChunks (offset $offset)", $cloudDomain);
 
-                // make request
                 $chunkResponse = makeRequest($cloudUsername, $token, $url);
 
                 if ($chunkResponse === false || !isset($chunkResponse['rows'])) {
-                    debug("ERROR: Failed to get phonebook chunk at offset $offset for {$cloudUsername}", $cloudDomain);
+                    debug("ERROR: Failed to get phonebook page at offset $offset for {$cloudUsername}", $cloudDomain);
                     break;
                 }
 
-                // log chunk completion with stats and timing
-                $chunkCount = isset($chunkResponse['rows']) ? count($chunkResponse['rows']) : 0;
-                $processedSoFar = min($offset + $chunkCount, $totalContacts);
-                $progressPercent = round(($processedSoFar / $totalContacts) * 100, 1);
-                $chunkTime = round((microtime(true) - $startTime) * 1000, 0);
-                debug("Chunk $chunkNumber/$totalChunks completed: $chunkCount contacts, $processedSoFar/$totalContacts total ($progressPercent%) - {$chunkTime}ms", $cloudDomain);
+                $chunkCount = count($chunkResponse['rows']);
+                debug("Page $chunkNumber/$totalChunks completed: $chunkCount contacts fetched", $cloudDomain);
 
-                // loop contacts in current chunk
+                // process contacts from current page
                 foreach ($chunkResponse['rows'] as $contact) {
-                    if (!$firstContact) {
-                        echo ',';
-                    }
-
                     // compose contact object
                     $contactData = [
                         "avatar" => "",
@@ -485,42 +463,32 @@ function handle($data)
                         "notes" => $contact["notes"]
                     ];
 
-                    // output contact as JSON and immediately free memory
-                    echo json_encode($contactData);
-                    unset($contactData);
-                    $firstContact = false;
+                    // add to contacts array
+                    $allContacts[] = $contactData;
                 }
 
-                // move to next chunk
                 $offset += $chunkSize;
                 $chunkNumber++;
-
-                // free chunk memory
                 unset($chunkResponse);
 
-                // run garbage collection every 5000 contacts to free memory
-                if ($offset % 5000 === 0) {
+                if (count($allContacts) % 10000 === 0) {
                     gc_collect_cycles();
-                    $gcProgressPercent = round(($processedSoFar / $totalContacts) * 100, 1);
-                    debug("Memory cleanup at $processedSoFar/$totalContacts contacts ($gcProgressPercent%) - Memory: " . round(memory_get_usage(true) / 1024 / 1024, 1) . "MB", $cloudDomain);
-                }
-
-                // flush output buffer periodically for better streaming
-                if ($offset % 2000 === 0) {
-                    ob_flush();
-                    flush();
+                    debug("Memory cleanup at " . count($allContacts) . " contacts - Memory: " . round(memory_get_usage(true) / 1024 / 1024, 1) . "MB", $cloudDomain);
                 }
             }
 
-            // close JSON structure
-            echo ']}';
+            $totalTime = round((microtime(true) - $startTime) * 1000, 0);
+            debug("Contacts fetched: " . count($allContacts) . " contacts in {$totalTime}ms", $cloudDomain);
 
-            debug("Completed optimized contacts processing for {$cloudUsername} - $totalContacts contacts streamed", $cloudDomain);
+            header("Content-type: application/json");
+            header("Last-Modified: " . date(DATE_RFC2822));
+            header("Cache-Control: private, must-revalidate");
+            header('HTTP/1.1 200 OK');
 
-            // flush output buffer
-            if (ob_get_level()) {
-                ob_end_flush();
-            }
+            $finalResponse = ['contacts' => $allContacts];
+            echo json_encode($finalResponse);
+
+            debug("Completed contacts processing for {$cloudUsername} - " . count($allContacts) . " contacts sent", $cloudDomain);
 
             break;
         case 'quickdial':
