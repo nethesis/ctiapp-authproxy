@@ -355,7 +355,7 @@ function handle($data)
 
             // get total contacts count
             $totalContacts = $response['count'];
-            $chunkSize = 300; // Further reduced for Digital Ocean timeout constraints
+            $chunkSize = 2000; // Further reduced for Digital Ocean timeout constraints
             $offset = 0;
 
             // set counter in a file
