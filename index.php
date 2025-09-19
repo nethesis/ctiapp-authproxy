@@ -340,6 +340,10 @@ function handle($data)
             // get request headers
             $headers = apache_request_headers();
 
+            // debug cache headers
+            debug("Cache check - If-Modified-Since: " . (isset($headers['If-Modified-Since']) ? $headers['If-Modified-Since'] : 'NOT SET'), $cloudDomain);
+            debug("Cache check - Current count: {$response['count']}, Cached count: $count", $cloudDomain);
+
             // check if counter is equal or last modified is 24 hours ago, return 304 Not Modified
             if (isset($headers['If-Modified-Since']) && strtotime($headers['If-Modified-Since']) >= strtotime('-24 hours', time()) && $count == $response['count']) {
                 // print debug
