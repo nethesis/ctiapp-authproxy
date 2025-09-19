@@ -304,6 +304,10 @@ function handle($data)
         case 'contacts':
             debug("Starting optimized contacts processing for {$cloudUsername}", $cloudDomain);
 
+            // debug all request headers to understand cache behavior
+            $allHeaders = apache_request_headers();
+            debug("ALL REQUEST HEADERS: " . json_encode($allHeaders), $cloudDomain);
+
             // get auth token
             if (!$isToken) {
                 // get auth token
@@ -344,8 +348,8 @@ function handle($data)
             debug("Cache check - If-Modified-Since: " . (isset($headers['If-Modified-Since']) ? $headers['If-Modified-Since'] : 'NOT SET'), $cloudDomain);
             debug("Cache check - Current count: {$response['count']}, Cached count: $count", $cloudDomain);
 
-            // check if counter is equal, return 304 Not Modified (force cache based on count only)
-            if ($count == $response['count'] && $count > 0) {
+            // check if client has cache AND counter is equal, return 304 Not Modified
+            if (isset($headers['If-Modified-Since']) && $count == $response['count'] && $count > 0) {
                 // print debug
                 debug('Phonebook contacts are the same: ' . $count . ' - returning 304 Not Modified', $cloudDomain);
 
