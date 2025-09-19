@@ -5,11 +5,13 @@
 #
 
 // function to print debug log messages
-function debug($message)
+function debug($message, $domain = null)
 {
     // print debug if env is set
-    if (getenv('DEBUG') && getenv('DEBUG') === 'true')
-        error_log("DEBUG: " . $message);
+    if (getenv('DEBUG') && getenv('DEBUG') === 'true') {
+        $prefix = $domain ? "DEBUG[$domain]: " : "DEBUG: ";
+        error_log($prefix . $message);
+    }
 }
 
 // function to make http GET requests
@@ -91,7 +93,7 @@ function getAuthToken($cloudUsername, $cloudPassword, $cloudDomain)
     $token = hash_hmac('sha1', $tohash, $cloudPassword);
 
     // print debug
-    debug("Token generated for {$cloudUsername}@{$cloudDomain}");
+    debug("Token generated for {$cloudUsername}", $cloudDomain);
 
     return $token;
 }
@@ -105,10 +107,10 @@ function getSipCredentials($cloudUsername, $cloudPassword, $cloudDomain, $isToke
         $token = getAuthToken($cloudUsername, $cloudPassword, $cloudDomain);
 
         // print debug
-        debug("Token generated for {$cloudUsername}@{$cloudDomain}");
+        debug("Token generated for {$cloudUsername}", $cloudDomain);
     } else {
         // print debug
-        debug("Password is already a token for {$cloudUsername}@{$cloudDomain}");
+        debug("Password is already a token for {$cloudUsername}", $cloudDomain);
 
         // assign password as token
         $token = $cloudPassword;
@@ -139,7 +141,7 @@ function getSipCredentials($cloudUsername, $cloudPassword, $cloudDomain, $isToke
         curl_close($ch);
 
         // print debug
-        debug("lkhash validated for {$cloudUsername}@{$cloudDomain}");
+        debug("lkhash validated for {$cloudUsername}", $cloudDomain);
 
         // check if return code is 200, otherwise return false
         if ($httpCode !== 200) {
@@ -165,7 +167,7 @@ function getSipCredentials($cloudUsername, $cloudPassword, $cloudDomain, $isToke
     }
 
     // if step 4 has no endpoints, return false
-    debug("No endpoints found for {$cloudUsername}@{$cloudDomain}");
+    debug("No endpoints found for {$cloudUsername}", $cloudDomain);
     return false;
 }
 
@@ -197,7 +199,7 @@ function handle($data)
         $loginTypeString = "@qrcode";
 
         // print debug
-        debug("Using qrcode login for {$cloudUsername}@{$cloudDomain}");
+        debug("Using qrcode login for {$cloudUsername}", $cloudDomain);
     } else {
         $isToken = false;
         $loginTypeString = "";
@@ -233,10 +235,10 @@ function handle($data)
                 $token = getAuthToken($cloudUsername, $cloudPassword, $cloudDomain);
 
                 // print debug
-                debug("Token generated for {$cloudUsername}@{$cloudDomain}");
+                debug("Token generated for {$cloudUsername}", $cloudDomain);
             } else {
                 // print debug
-                debug("Password is already a token for {$cloudUsername}@{$cloudDomain}");
+                debug("Password is already a token for {$cloudUsername}", $cloudDomain);
 
                 // assign password as token
                 $token = $cloudPassword;
@@ -269,7 +271,7 @@ function handle($data)
                 $proxy = "<proxy>{$result['proxy_fqdn']}:5061</proxy>";
             } else {
                 // print debug
-                debug("No proxy fqdn found in response for {$cloudUsername}@{$cloudDomain}");
+                debug("No proxy fqdn found in response for {$cloudUsername}", $cloudDomain);
             }
 
             // compose final xml string
@@ -296,7 +298,7 @@ function handle($data)
             break;
         // handle Contact Sources app
         case 'contacts':
-            debug("Starting optimized contacts processing for {$cloudUsername}@{$cloudDomain}");
+            debug("Starting optimized contacts processing for {$cloudUsername}", $cloudDomain);
 
             // get auth token
             if (!$isToken) {
@@ -304,10 +306,10 @@ function handle($data)
                 $token = getAuthToken($cloudUsername, $cloudPassword, $cloudDomain);
 
                 // print debug
-                debug("Contacts. Token generated for {$cloudUsername}@{$cloudDomain}");
+                debug("Contacts. Token generated for {$cloudUsername}", $cloudDomain);
             } else {
                 // print debug
-                debug("Contacts. Password is already a token for {$cloudUsername}@{$cloudDomain}");
+                debug("Contacts. Password is already a token for {$cloudUsername}", $cloudDomain);
 
                 // assign password as token
                 $token = $cloudPassword;
@@ -320,7 +322,7 @@ function handle($data)
             $response = makeRequest($cloudUsername, $token, $url);
 
             if ($response == false) {
-                debug("ERROR: Failed to get phonebook contacts for {$cloudUsername}@{$cloudDomain}");
+                debug("ERROR: Failed to get phonebook contacts for {$cloudUsername}", $cloudDomain);
                 header("HTTP/1.0 404 Not Found");
                 return;
             }
@@ -337,7 +339,7 @@ function handle($data)
             // check if counter is equal or last modified is 24 hours ago, return 304 Not Modified
             if (isset($headers['If-Modified-Since']) && strtotime($headers['If-Modified-Since']) >= strtotime('-24 hours', time()) && $count == $response['count']) {
                 // print debug
-                debug('Phonebook contacts are the same: ' . $count . ' since ' . $headers['If-Modified-Since']);
+                debug('Phonebook contacts are the same: ' . $count . ' since ' . $headers['If-Modified-Since'], $cloudDomain);
 
                 // return header 304
                 header('HTTP/1.1 304 Not Modified');
@@ -345,7 +347,7 @@ function handle($data)
             }
 
             // new contacts found, write to debug log
-            debug('Phonebook contacts found: ' . $response['count'] . ' - starting chunked processing');
+            debug('Phonebook contacts found: ' . $response['count'] . ' - starting chunked processing', $cloudDomain);
 
             // get total contacts count
             $totalContacts = $response['count'];
@@ -360,12 +362,8 @@ function handle($data)
             header("Last-Modified: " . date(DATE_RFC2822));
             header('HTTP/1.1 200 OK');
 
-            // start gzip compression if available
-            if (function_exists('ob_gzhandler') && !headers_sent()) {
-                ob_start("ob_gzhandler");
-            } else {
-                ob_start();
-            }
+            // start output buffering for streaming
+            ob_start();
 
             // start streaming JSON output
             echo '{"contacts":[';
@@ -378,13 +376,22 @@ function handle($data)
                 // make chunked request to get phonebook contacts
                 $url = "https://$cloudDomain/webrest/phonebook/search/?view=all&limit=$chunkSize&offset=$offset";
 
+                // log chunk progress
+                debug("Processing chunk $chunkNumber/$totalChunks (offset $offset)", $cloudDomain);
+
                 // make request
                 $chunkResponse = makeRequest($cloudUsername, $token, $url);
 
                 if ($chunkResponse === false || !isset($chunkResponse['rows'])) {
-                    debug("ERROR: Failed to get phonebook chunk at offset $offset for {$cloudUsername}@{$cloudDomain}");
+                    debug("ERROR: Failed to get phonebook chunk at offset $offset for {$cloudUsername}", $cloudDomain);
                     break;
                 }
+
+                // log chunk completion with stats
+                $chunkCount = isset($chunkResponse['rows']) ? count($chunkResponse['rows']) : 0;
+                $processedSoFar = min($offset + $chunkCount, $totalContacts);
+                $progressPercent = round(($processedSoFar / $totalContacts) * 100, 1);
+                debug("Chunk $chunkNumber/$totalChunks completed: $chunkCount contacts, $processedSoFar/$totalContacts total ($progressPercent%)", $cloudDomain);
 
                 // loop contacts in current chunk
                 foreach ($chunkResponse['rows'] as $contact) {
@@ -476,6 +483,8 @@ function handle($data)
                 // run garbage collection every 5000 contacts to free memory
                 if ($offset % 5000 === 0) {
                     gc_collect_cycles();
+                    $gcProgressPercent = round(($processedSoFar / $totalContacts) * 100, 1);
+                    debug("Memory cleanup at $processedSoFar/$totalContacts contacts ($gcProgressPercent%) - Memory: " . round(memory_get_usage(true) / 1024 / 1024, 1) . "MB", $cloudDomain);
                 }
 
                 // flush output buffer periodically for better streaming
@@ -488,15 +497,12 @@ function handle($data)
             // close JSON structure
             echo ']}';
 
-            debug("Completed optimized contacts processing for {$cloudUsername}@{$cloudDomain} - $totalContacts contacts streamed");
+            debug("Completed optimized contacts processing for {$cloudUsername} - $totalContacts contacts streamed", $cloudDomain);
 
-            // flush output buffer safely
-            while (ob_get_level()) {
-                if (!ob_end_flush()) {
-                    break;
-                }
+            // flush output buffer
+            if (ob_get_level()) {
+                ob_end_flush();
             }
-            flush();
 
             break;
         case 'quickdial':
@@ -506,10 +512,10 @@ function handle($data)
                 $token = getAuthToken($cloudUsername, $cloudPassword, $cloudDomain);
 
                 // print debug
-                debug("QuickDials. Token generated for {$cloudUsername}@{$cloudDomain}");
+                debug("QuickDials. Token generated for {$cloudUsername}", $cloudDomain);
             } else {
                 // print debug
-                debug("QuickDials. Password is already a token for {$cloudUsername}@{$cloudDomain}");
+                debug("QuickDials. Password is already a token for {$cloudUsername}", $cloudDomain);
 
                 // assign password as token
                 $token = $cloudPassword;
@@ -539,7 +545,7 @@ function handle($data)
                         $favorites[] = $quickdial['speeddial_num'];
 
                         // print debug message
-                        debug("Quick dials is a favorite: " . $quickdial['company'] . " " . $quickdial['speeddial_num']);
+                        debug("Quick dials is a favorite: " . $quickdial['company'] . " " . $quickdial['speeddial_num'], $cloudDomain);
                     }
                 }
             }
@@ -564,7 +570,7 @@ function handle($data)
                         $removes[] = '<item id="' . $extension . '" action="remove"/>';
 
                         // print debug message
-                        debug("Quick dials is not a favorite: " . $extension);
+                        debug("Quick dials is not a favorite: " . $extension, $cloudDomain);
                     }
                 }
             }
