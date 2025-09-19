@@ -4,17 +4,16 @@
 # SPDX-License-Identifier: AGPL-3.0
 #
 
-// Set PHP configuration for large contact processing
-ini_set('max_execution_time', 90);
-ini_set('memory_limit', '512M');
-
 // function to print debug log messages
 function debug($message, $domain = null)
 {
     // print debug if env is set
     if (getenv('DEBUG') && getenv('DEBUG') === 'true') {
-        $prefix = $domain ? "DEBUG[$domain]: " : "DEBUG: ";
-        error_log($prefix . $message);
+        if ($domain) {
+            error_log("DEBUG[$domain]: " . $message);
+        } else {
+            error_log("DEBUG: " . $message);
+        }
     }
 }
 
@@ -97,7 +96,7 @@ function getAuthToken($cloudUsername, $cloudPassword, $cloudDomain)
     $token = hash_hmac('sha1', $tohash, $cloudPassword);
 
     // print debug
-    debug("Token generated for {$cloudUsername}", $cloudDomain);
+    debug("Token generated for {$cloudUsername}@{$cloudDomain}");
 
     return $token;
 }
@@ -111,10 +110,10 @@ function getSipCredentials($cloudUsername, $cloudPassword, $cloudDomain, $isToke
         $token = getAuthToken($cloudUsername, $cloudPassword, $cloudDomain);
 
         // print debug
-        debug("Token generated for {$cloudUsername}", $cloudDomain);
+        debug("Token generated for {$cloudUsername}@{$cloudDomain}");
     } else {
         // print debug
-        debug("Password is already a token for {$cloudUsername}", $cloudDomain);
+        debug("Password is already a token for {$cloudUsername}@{$cloudDomain}");
 
         // assign password as token
         $token = $cloudPassword;
@@ -145,7 +144,7 @@ function getSipCredentials($cloudUsername, $cloudPassword, $cloudDomain, $isToke
         curl_close($ch);
 
         // print debug
-        debug("lkhash validated for {$cloudUsername}", $cloudDomain);
+        debug("lkhash validated for {$cloudUsername}@{$cloudDomain}");
 
         // check if return code is 200, otherwise return false
         if ($httpCode !== 200) {
@@ -171,7 +170,7 @@ function getSipCredentials($cloudUsername, $cloudPassword, $cloudDomain, $isToke
     }
 
     // if step 4 has no endpoints, return false
-    debug("No endpoints found for {$cloudUsername}", $cloudDomain);
+    debug("No endpoints found for {$cloudUsername}@{$cloudDomain}");
     return false;
 }
 
@@ -302,7 +301,7 @@ function handle($data)
             break;
         // handle Contact Sources app
         case 'contacts':
-            debug("Starting optimized contacts processing for {$cloudUsername}", $cloudDomain);
+            debug("Starting contacts processing for {$cloudUsername}", $cloudDomain);
 
             // debug all request headers to understand cache behavior
             $allHeaders = apache_request_headers();
@@ -348,147 +347,112 @@ function handle($data)
             debug("Cache check - If-Modified-Since: " . (isset($headers['If-Modified-Since']) ? $headers['If-Modified-Since'] : 'NOT SET'), $cloudDomain);
             debug("Cache check - Current count: {$response['count']}, Cached count: $count", $cloudDomain);
 
-            // check if client has cache AND counter is equal, return 304 Not Modified
-            if (isset($headers['If-Modified-Since']) && $count == $response['count'] && $count > 0) {
+            // check if counter is equal or last modified is 24 hours ago, return 304 Not Modified
+            if (isset($headers['If-Modified-Since']) && strtotime($headers['If-Modified-Since']) >= strtotime('-24 hours', time()) && $count == $response['count']) {
                 // print debug
-                debug('Phonebook contacts are the same: ' . $count . ' - returning 304 Not Modified', $cloudDomain);
+                debug('Phonebook contacts are the same: ' . $count . ' since ' . $headers['If-Modified-Since'], $cloudDomain);
 
-                // return 304 with proper headers
-                header("Content-type: application/json");
-                header("Last-Modified: " . date(DATE_RFC2822));
-                header("Cache-Control: private, must-revalidate");
+                // return header 304
                 header('HTTP/1.1 304 Not Modified');
                 return;
             }
 
-            // get total contacts count
-            $totalContacts = $response['count'];
+            // new contacts found, write to debug log
+            debug('Phonebook new contacts found: ' . $response['count'], $cloudDomain);
 
-            debug("Phonebook contacts found: $totalContacts - fetching all contacts", $cloudDomain);
+            // make request to get all phonebook contacts
+            $url = "https://$cloudDomain/webrest/phonebook/search/?view=all";
 
-            // set counter in a file
-            file_put_contents("/tmp/phonebook_counters_" . $cloudDomain, $totalContacts);
+            // make request
+            $response = makeRequest($cloudUsername, $token, $url);
 
-            // build complete contacts array
-            $allContacts = [];
-            $chunkSize = 2000;
-            $offset = 0;
+            // create contacts object
+            $contacts = array();
 
-            $chunkNumber = 1;
-            $totalChunks = ceil($totalContacts / $chunkSize);
-            $startTime = microtime(true);
-
-            while ($offset < $totalContacts) {
-                $url = "https://$cloudDomain/webrest/phonebook/search/?view=all&limit=$chunkSize&offset=$offset";
-
-                debug("Fetching page $chunkNumber/$totalChunks (offset $offset)", $cloudDomain);
-
-                $chunkResponse = makeRequest($cloudUsername, $token, $url);
-
-                if ($chunkResponse === false || !isset($chunkResponse['rows'])) {
-                    debug("ERROR: Failed to get phonebook page at offset $offset for {$cloudUsername}", $cloudDomain);
-                    break;
-                }
-
-                $chunkCount = count($chunkResponse['rows']);
-                debug("Page $chunkNumber/$totalChunks completed: $chunkCount contacts fetched", $cloudDomain);
-
-                // process contacts from current page
-                foreach ($chunkResponse['rows'] as $contact) {
-                    // compose contact object
-                    $contactData = [
-                        "avatar" => "",
-                        "largeAvatar" => "",
-                        "birthday" => "",
-                        "checksum" => "",
-                        "contactEntries" => [
-                            [
-                                "entryId" => "0",
-                                "label" => "home phone",
-                                "type" => "tel",
-                                "uri" => $contact["homephone"]
-                            ],
-                            [
-                                "entryId" => "1",
-                                "label" => "work phone",
-                                "type" => "tel",
-                                "uri" => $contact["workphone"]
-                            ],
-                            [
-                                "entryId" => "2",
-                                "label" => "mobile",
-                                "type" => "tel",
-                                "uri" => $contact["cellphone"]
-                            ],
-                            [
-                                "entryId" => "3",
-                                "label" => "home email",
-                                "type" => "email",
-                                "uri" => $contact["homeemail"]
-                            ],
-                            [
-                                "entryId" => "4",
-                                "label" => "work email",
-                                "type" => "email",
-                                "uri" => $contact["workemail"]
-                            ],
+            // loop contacts api response
+            foreach ($response['rows'] as $contact) {
+                // compose contacts object
+                $contacts[] = [
+                    "avatar" => "",
+                    "largeAvatar" => "",
+                    "birthday" => "",
+                    "checksum" => "",
+                    "contactEntries" => [
+                        [
+                            "entryId" => "0",
+                            "label" => "home phone",
+                            "type" => "tel",
+                            "uri" => $contact["homephone"]
                         ],
-                        "contactAddresses" => [
-                            [
-                                "addressId" => "0",
-                                "label" => "home address",
-                                "city" => $contact["homecity"],
-                                "country" => $contact["homecountry"],
-                                "countryCode" => "",
-                                "state" => $contact["homeprovince"],
-                                "street" => $contact["homestreet"],
-                                "zip" => $contact["homepostalcode"]
-                            ],
-                            [
-                                "addressId" => "1",
-                                "label" => "work address",
-                                "city" => $contact["workcity"],
-                                "country" => $contact["workcountry"],
-                                "countryCode" => "",
-                                "state" => $contact["workprovince"],
-                                "street" => $contact["workstreet"],
-                                "zip" => $contact["workpostalcode"]
-                            ]
+                        [
+                            "entryId" => "1",
+                            "label" => "work phone",
+                            "type" => "tel",
+                            "uri" => $contact["workphone"]
                         ],
-                        "contactId" => $contact["id"],
-                        "company" => $contact["company"],
-                        "displayName" => $contact["name"],
-                        "fname" => "",
-                        "lname" => "",
-                        "notes" => $contact["notes"]
-                    ];
-
-                    // add to contacts array
-                    $allContacts[] = $contactData;
-                }
-
-                $offset += $chunkSize;
-                $chunkNumber++;
-                unset($chunkResponse);
-
-                if (count($allContacts) % 10000 === 0) {
-                    gc_collect_cycles();
-                    debug("Memory cleanup at " . count($allContacts) . " contacts - Memory: " . round(memory_get_usage(true) / 1024 / 1024, 1) . "MB", $cloudDomain);
-                }
+                        [
+                            "entryId" => "2",
+                            "label" => "mobile",
+                            "type" => "tel",
+                            "uri" => $contact["cellphone"]
+                        ],
+                        [
+                            "entryId" => "3",
+                            "label" => "home email",
+                            "type" => "email",
+                            "uri" => $contact["homeemail"]
+                        ],
+                        [
+                            "entryId" => "4",
+                            "label" => "work email",
+                            "type" => "email",
+                            "uri" => $contact["workemail"]
+                        ],
+                    ],
+                    "contactAddresses" => [
+                        [
+                            "addressId" => "0",
+                            "label" => "home address",
+                            "city" => $contact["homecity"],
+                            "country" => $contact["homecountry"],
+                            "countryCode" => "",
+                            "state" => $contact["homeprovince"],
+                            "street" => $contact["homestreet"],
+                            "zip" => $contact["homepostalcode"]
+                        ],
+                        [
+                            "addressId" => "1",
+                            "label" => "work address",
+                            "city" => $contact["workcity"],
+                            "country" => $contact["workcountry"],
+                            "countryCode" => "",
+                            "state" => $contact["workprovince"],
+                            "street" => $contact["workstreet"],
+                            "zip" => $contact["workpostalcode"]
+                        ]
+                    ],
+                    "contactId" => $contact["id"],
+                    "company" => $contact["company"],
+                    "displayName" => $contact["name"],
+                    "fname" => "",
+                    "lname" => "",
+                    "notes" => $contact["notes"]
+                ];
             }
 
-            $totalTime = round((microtime(true) - $startTime) * 1000, 0);
-            debug("Contacts fetched: " . count($allContacts) . " contacts in {$totalTime}ms", $cloudDomain);
+            // set counter in a file
+            file_put_contents("/tmp/phonebook_counters_" . $cloudDomain, $response['count']);
 
+            // set headers
             header("Content-type: application/json");
             header("Last-Modified: " . date(DATE_RFC2822));
-            header("Cache-Control: private, must-revalidate");
             header('HTTP/1.1 200 OK');
 
-            $finalResponse = ['contacts' => $allContacts];
-            echo json_encode($finalResponse);
+            // print results
+            $result = json_encode(array("contacts" => $contacts));
+            echo $result;
 
-            debug("Completed contacts processing for {$cloudUsername} - " . count($allContacts) . " contacts sent", $cloudDomain);
+            debug("Completed contacts processing for {$cloudUsername} - " . count($contacts) . " contacts sent", $cloudDomain);
 
             break;
         case 'quickdial':
