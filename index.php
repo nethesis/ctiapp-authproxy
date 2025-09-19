@@ -344,8 +344,8 @@ function handle($data)
             debug("Cache check - If-Modified-Since: " . (isset($headers['If-Modified-Since']) ? $headers['If-Modified-Since'] : 'NOT SET'), $cloudDomain);
             debug("Cache check - Current count: {$response['count']}, Cached count: $count", $cloudDomain);
 
-            // check if counter is equal or last modified is 24 hours ago, return 304 Not Modified
-            if (isset($headers['If-Modified-Since']) && strtotime($headers['If-Modified-Since']) >= strtotime('-24 hours', time()) && $count == $response['count']) {
+            // check if counter is equal, return 304 Not Modified (force cache based on count only)
+            if ($count == $response['count'] && $count > 0) {
                 // print debug
                 debug('Phonebook contacts are the same: ' . $count . ' since ' . $headers['If-Modified-Since'], $cloudDomain);
 
@@ -368,7 +368,6 @@ function handle($data)
             // set headers for proper streaming with caching support
             header("Content-type: application/json");
             header("Last-Modified: " . date(DATE_RFC2822));
-            header("Transfer-Encoding: chunked");
             header("Cache-Control: private, must-revalidate");
             header('HTTP/1.1 200 OK');
 
