@@ -347,9 +347,12 @@ function handle($data)
             // check if counter is equal, return 304 Not Modified (force cache based on count only)
             if ($count == $response['count'] && $count > 0) {
                 // print debug
-                debug('Phonebook contacts are the same: ' . $count . ' since ' . $headers['If-Modified-Since'], $cloudDomain);
+                debug('Phonebook contacts are the same: ' . $count . ' - returning 304 Not Modified', $cloudDomain);
 
-                // return header 304
+                // return 304 with proper headers
+                header("Content-type: application/json");
+                header("Last-Modified: " . date(DATE_RFC2822));
+                header("Cache-Control: private, must-revalidate");
                 header('HTTP/1.1 304 Not Modified');
                 return;
             }
