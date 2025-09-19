@@ -443,10 +443,13 @@ function handle($data)
             // set counter in a file
             file_put_contents("/tmp/phonebook_counters_" . $cloudDomain, $response['count']);
 
-            // set headers
+            // set headers (clean cache-friendly headers)
             header("Content-type: application/json");
-            header("Last-Modified: " . date(DATE_RFC2822));
+            $lastModified = gmdate('D, d M Y H:i:s') . ' GMT';
+            header("Last-Modified: " . $lastModified);
             header('HTTP/1.1 200 OK');
+
+            debug("Sending Last-Modified header: " . $lastModified, $cloudDomain);
 
             // print results
             $result = json_encode(array("contacts" => $contacts));
