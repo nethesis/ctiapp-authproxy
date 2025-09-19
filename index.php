@@ -4,6 +4,10 @@
 # SPDX-License-Identifier: AGPL-3.0
 #
 
+// Set PHP configuration for large contact processing
+ini_set('max_execution_time', 90);
+ini_set('memory_limit', '512M');
+
 // function to print debug log messages
 function debug($message, $domain = null)
 {
@@ -351,7 +355,7 @@ function handle($data)
 
             // get total contacts count
             $totalContacts = $response['count'];
-            $chunkSize = 1000;
+            $chunkSize = 300; // Further reduced for Digital Ocean timeout constraints
             $offset = 0;
 
             // set counter in a file
@@ -376,7 +380,8 @@ function handle($data)
                 // make chunked request to get phonebook contacts
                 $url = "https://$cloudDomain/webrest/phonebook/search/?view=all&limit=$chunkSize&offset=$offset";
 
-                // log chunk progress
+                // log chunk progress with timing
+                $startTime = microtime(true);
                 debug("Processing chunk $chunkNumber/$totalChunks (offset $offset)", $cloudDomain);
 
                 // make request
@@ -387,11 +392,12 @@ function handle($data)
                     break;
                 }
 
-                // log chunk completion with stats
+                // log chunk completion with stats and timing
                 $chunkCount = isset($chunkResponse['rows']) ? count($chunkResponse['rows']) : 0;
                 $processedSoFar = min($offset + $chunkCount, $totalContacts);
                 $progressPercent = round(($processedSoFar / $totalContacts) * 100, 1);
-                debug("Chunk $chunkNumber/$totalChunks completed: $chunkCount contacts, $processedSoFar/$totalContacts total ($progressPercent%)", $cloudDomain);
+                $chunkTime = round((microtime(true) - $startTime) * 1000, 0);
+                debug("Chunk $chunkNumber/$totalChunks completed: $chunkCount contacts, $processedSoFar/$totalContacts total ($progressPercent%) - {$chunkTime}ms", $cloudDomain);
 
                 // loop contacts in current chunk
                 foreach ($chunkResponse['rows'] as $contact) {
