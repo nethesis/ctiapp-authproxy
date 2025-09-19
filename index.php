@@ -5,16 +5,11 @@
 #
 
 // function to print debug log messages
-function debug($message, $domain = null)
+function debug($message)
 {
     // print debug if env is set
-    if (getenv('DEBUG') && getenv('DEBUG') === 'true') {
-        if ($domain) {
-            error_log("DEBUG[$domain]: " . $message);
-        } else {
-            error_log("DEBUG: " . $message);
-        }
-    }
+    if (getenv('DEBUG') && getenv('DEBUG') === 'true')
+        error_log("DEBUG: " . $message);
 }
 
 // function to make http GET requests
@@ -202,7 +197,7 @@ function handle($data)
         $loginTypeString = "@qrcode";
 
         // print debug
-        debug("Using qrcode login for {$cloudUsername}", $cloudDomain);
+        debug("Using qrcode login for {$cloudUsername}@{$cloudDomain}");
     } else {
         $isToken = false;
         $loginTypeString = "";
@@ -238,10 +233,10 @@ function handle($data)
                 $token = getAuthToken($cloudUsername, $cloudPassword, $cloudDomain);
 
                 // print debug
-                debug("Token generated for {$cloudUsername}", $cloudDomain);
+                debug("Token generated for {$cloudUsername}@{$cloudDomain}");
             } else {
                 // print debug
-                debug("Password is already a token for {$cloudUsername}", $cloudDomain);
+                debug("Password is already a token for {$cloudUsername}@{$cloudDomain}");
 
                 // assign password as token
                 $token = $cloudPassword;
@@ -274,7 +269,7 @@ function handle($data)
                 $proxy = "<proxy>{$result['proxy_fqdn']}:5061</proxy>";
             } else {
                 // print debug
-                debug("No proxy fqdn found in response for {$cloudUsername}", $cloudDomain);
+                debug("No proxy fqdn found in response for {$cloudUsername}@{$cloudDomain}");
             }
 
             // compose final xml string
@@ -301,22 +296,16 @@ function handle($data)
             break;
         // handle Contact Sources app
         case 'contacts':
-            debug("Starting contacts processing for {$cloudUsername}", $cloudDomain);
-
-            // debug all request headers to understand cache behavior
-            $allHeaders = apache_request_headers();
-            debug("ALL REQUEST HEADERS: " . json_encode($allHeaders), $cloudDomain);
-
             // get auth token
             if (!$isToken) {
                 // get auth token
                 $token = getAuthToken($cloudUsername, $cloudPassword, $cloudDomain);
 
                 // print debug
-                debug("Contacts. Token generated for {$cloudUsername}", $cloudDomain);
+                debug("Contacts. Token generated for {$cloudUsername}@{$cloudDomain}");
             } else {
                 // print debug
-                debug("Contacts. Password is already a token for {$cloudUsername}", $cloudDomain);
+                debug("Contacts. Password is already a token for {$cloudUsername}@{$cloudDomain}");
 
                 // assign password as token
                 $token = $cloudPassword;
@@ -329,7 +318,7 @@ function handle($data)
             $response = makeRequest($cloudUsername, $token, $url);
 
             if ($response == false) {
-                debug("ERROR: Failed to get phonebook contacts for {$cloudUsername}", $cloudDomain);
+                debug("ERROR: Failed to get phonebook contacts for {$cloudUsername}@{$cloudDomain}");
                 header("HTTP/1.0 404 Not Found");
                 return;
             }
@@ -343,14 +332,10 @@ function handle($data)
             // get request headers
             $headers = apache_request_headers();
 
-            // debug cache headers
-            debug("Cache check - If-Modified-Since: " . (isset($headers['If-Modified-Since']) ? $headers['If-Modified-Since'] : 'NOT SET'), $cloudDomain);
-            debug("Cache check - Current count: {$response['count']}, Cached count: $count", $cloudDomain);
-
             // check if counter is equal or last modified is 24 hours ago, return 304 Not Modified
             if (isset($headers['If-Modified-Since']) && strtotime($headers['If-Modified-Since']) >= strtotime('-24 hours', time()) && $count == $response['count']) {
                 // print debug
-                debug('Phonebook contacts are the same: ' . $count . ' since ' . $headers['If-Modified-Since'], $cloudDomain);
+                debug('Phonebook contacts are the same: ' . $count . ' since ' . $headers['If-Modified-Since']);
 
                 // return header 304
                 header('HTTP/1.1 304 Not Modified');
@@ -358,7 +343,7 @@ function handle($data)
             }
 
             // new contacts found, write to debug log
-            debug('Phonebook new contacts found: ' . $response['count'], $cloudDomain);
+            debug('Phonebook new contacts found: ' . $response['count']);
 
             // make request to get all phonebook contacts
             $url = "https://$cloudDomain/webrest/phonebook/search/?view=all";
@@ -443,19 +428,14 @@ function handle($data)
             // set counter in a file
             file_put_contents("/tmp/phonebook_counters_" . $cloudDomain, $response['count']);
 
-            // set headers (clean cache-friendly headers)
+            // set headers
             header("Content-type: application/json");
-            $lastModified = gmdate('D, d M Y H:i:s') . ' GMT';
-            header("Last-Modified: " . $lastModified);
+            header("Last-Modified: " . gmdate('D, d M Y H:i:s') . ' GMT');
             header('HTTP/1.1 200 OK');
-
-            debug("Sending Last-Modified header: " . $lastModified, $cloudDomain);
 
             // print results
             $result = json_encode(array("contacts" => $contacts));
             echo $result;
-
-            debug("Completed contacts processing for {$cloudUsername} - " . count($contacts) . " contacts sent", $cloudDomain);
 
             break;
         case 'quickdial':
@@ -465,10 +445,10 @@ function handle($data)
                 $token = getAuthToken($cloudUsername, $cloudPassword, $cloudDomain);
 
                 // print debug
-                debug("QuickDials. Token generated for {$cloudUsername}", $cloudDomain);
+                debug("QuickDials. Token generated for {$cloudUsername}@{$cloudDomain}");
             } else {
                 // print debug
-                debug("QuickDials. Password is already a token for {$cloudUsername}", $cloudDomain);
+                debug("QuickDials. Password is already a token for {$cloudUsername}@{$cloudDomain}");
 
                 // assign password as token
                 $token = $cloudPassword;
@@ -498,7 +478,7 @@ function handle($data)
                         $favorites[] = $quickdial['speeddial_num'];
 
                         // print debug message
-                        debug("Quick dials is a favorite: " . $quickdial['company'] . " " . $quickdial['speeddial_num'], $cloudDomain);
+                        debug("Quick dials is a favorite: " . $quickdial['company'] . " " . $quickdial['speeddial_num']);
                     }
                 }
             }
@@ -523,7 +503,7 @@ function handle($data)
                         $removes[] = '<item id="' . $extension . '" action="remove"/>';
 
                         // print debug message
-                        debug("Quick dials is not a favorite: " . $extension, $cloudDomain);
+                        debug("Quick dials is not a favorite: " . $extension);
                     }
                 }
             }
