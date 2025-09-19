@@ -361,9 +361,11 @@ function handle($data)
             // set counter in a file
             file_put_contents("/tmp/phonebook_counters_" . $cloudDomain, $totalContacts);
 
-            // set headers
+            // set headers for proper streaming with caching support
             header("Content-type: application/json");
             header("Last-Modified: " . date(DATE_RFC2822));
+            header("Transfer-Encoding: chunked");
+            header("Cache-Control: private, must-revalidate");
             header('HTTP/1.1 200 OK');
 
             // start output buffering for streaming
