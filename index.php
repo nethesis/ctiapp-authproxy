@@ -5,11 +5,16 @@
 #
 
 // function to print debug log messages
-function debug($message)
+function debug($message, $domain = null)
 {
     // print debug if env is set
-    if (getenv('DEBUG') && getenv('DEBUG') === 'true')
-        error_log("DEBUG: " . $message);
+    if (getenv('DEBUG') && getenv('DEBUG') === 'true') {
+        if ($domain) {
+            error_log("DEBUG[$domain]: " . $message);
+        } else {
+            error_log("DEBUG: " . $message);
+        }
+    }
 }
 
 // function to make http GET requests
@@ -19,11 +24,22 @@ function makeRequest($username, $token, $url)
     $ch = curl_init($url);
     curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
     curl_setopt($ch, CURLOPT_SSL_VERIFYPEER, false);
+    curl_setopt($ch, CURLOPT_TIMEOUT, 60); // 60 second timeout for large requests
 
     // set headers
     $headers = array("Authorization: $username:$token");
     curl_setopt($ch, CURLOPT_HTTPHEADER, $headers);
     $response = curl_exec($ch);
+
+    // Check for curl errors
+    if (curl_error($ch)) {
+        $error = curl_error($ch);
+        $httpCode = curl_getinfo($ch, CURLINFO_HTTP_CODE);
+        curl_close($ch);
+        error_log("ERROR: cURL failed: $error (HTTP $httpCode) for URL: $url");
+        return false;
+    }
+
     curl_close($ch);
 
     // read response
@@ -32,7 +48,7 @@ function makeRequest($username, $token, $url)
     // Check if JSON decoding was successful
     if ($jsonResponse === null && json_last_error() !== JSON_ERROR_NONE) {
         error_log("ERROR: Failed to decode JSON: " . json_last_error_msg());
-        debug("Response: " . $response);
+        error_log("Response: " . $response);
         return false;
     }
 
@@ -91,7 +107,7 @@ function getAuthToken($cloudUsername, $cloudPassword, $cloudDomain)
     $token = hash_hmac('sha1', $tohash, $cloudPassword);
 
     // print debug
-    debug("Token generated for {$cloudUsername}@{$cloudDomain}");
+    debug("Token generated for {$cloudUsername}@{$cloudDomain}", $cloudDomain);
 
     return $token;
 }
@@ -105,10 +121,10 @@ function getSipCredentials($cloudUsername, $cloudPassword, $cloudDomain, $isToke
         $token = getAuthToken($cloudUsername, $cloudPassword, $cloudDomain);
 
         // print debug
-        debug("Token generated for {$cloudUsername}@{$cloudDomain}");
+        debug("Token generated for {$cloudUsername}@{$cloudDomain}", $cloudDomain);
     } else {
         // print debug
-        debug("Password is already a token for {$cloudUsername}@{$cloudDomain}");
+        debug("Password is already a token for {$cloudUsername}@{$cloudDomain}", $cloudDomain);
 
         // assign password as token
         $token = $cloudPassword;
@@ -139,7 +155,7 @@ function getSipCredentials($cloudUsername, $cloudPassword, $cloudDomain, $isToke
         curl_close($ch);
 
         // print debug
-        debug("lkhash validated for {$cloudUsername}@{$cloudDomain}");
+        debug("lkhash validated for {$cloudUsername}@{$cloudDomain}", $cloudDomain);
 
         // check if return code is 200, otherwise return false
         if ($httpCode !== 200) {
@@ -165,7 +181,7 @@ function getSipCredentials($cloudUsername, $cloudPassword, $cloudDomain, $isToke
     }
 
     // if step 4 has no endpoints, return false
-    debug("No endpoints found for {$cloudUsername}@{$cloudDomain}");
+    debug("No endpoints found for {$cloudUsername}@{$cloudDomain}", $cloudDomain);
     return false;
 }
 
@@ -197,7 +213,7 @@ function handle($data)
         $loginTypeString = "@qrcode";
 
         // print debug
-        debug("Using qrcode login for {$cloudUsername}@{$cloudDomain}");
+        debug("Using qrcode login for {$cloudUsername}@{$cloudDomain}", $cloudDomain);
     } else {
         $isToken = false;
         $loginTypeString = "";
@@ -233,10 +249,10 @@ function handle($data)
                 $token = getAuthToken($cloudUsername, $cloudPassword, $cloudDomain);
 
                 // print debug
-                debug("Token generated for {$cloudUsername}@{$cloudDomain}");
+                debug("Token generated for {$cloudUsername}@{$cloudDomain}", $cloudDomain);
             } else {
                 // print debug
-                debug("Password is already a token for {$cloudUsername}@{$cloudDomain}");
+                debug("Password is already a token for {$cloudUsername}@{$cloudDomain}", $cloudDomain);
 
                 // assign password as token
                 $token = $cloudPassword;
@@ -269,7 +285,7 @@ function handle($data)
                 $proxy = "<proxy>{$result['proxy_fqdn']}:5061</proxy>";
             } else {
                 // print debug
-                debug("No proxy fqdn found in response for {$cloudUsername}@{$cloudDomain}");
+                debug("No proxy fqdn found in response for {$cloudUsername}@{$cloudDomain}", $cloudDomain);
             }
 
             // compose final xml string
@@ -291,7 +307,7 @@ function handle($data)
             echo $xmlConfString;
 
             // print debug
-            debug('Returning sip credentials: ' . preg_replace('/password>.*<\//', 'password>xxxx</', $xmlConfString));
+            debug('Returning sip credentials: ' . preg_replace('/password>.*<\//', 'password>xxxx</', $xmlConfString), $cloudDomain);
 
             break;
         // handle Contact Sources app
@@ -302,10 +318,10 @@ function handle($data)
                 $token = getAuthToken($cloudUsername, $cloudPassword, $cloudDomain);
 
                 // print debug
-                debug("Contacts. Token generated for {$cloudUsername}@{$cloudDomain}");
+                debug("Contacts. Token generated for {$cloudUsername}", $cloudDomain);
             } else {
                 // print debug
-                debug("Contacts. Password is already a token for {$cloudUsername}@{$cloudDomain}");
+                debug("Contacts. Password is already a token for {$cloudUsername}", $cloudDomain);
 
                 // assign password as token
                 $token = $cloudPassword;
@@ -318,7 +334,7 @@ function handle($data)
             $response = makeRequest($cloudUsername, $token, $url);
 
             if ($response == false) {
-                debug("ERROR: Failed to get phonebook contacts for {$cloudUsername}@{$cloudDomain}");
+                debug("ERROR: Failed to get phonebook contacts for {$cloudUsername}", $cloudDomain);
                 header("HTTP/1.0 404 Not Found");
                 return;
             }
@@ -335,7 +351,7 @@ function handle($data)
             // check if counter is equal or last modified is 24 hours ago, return 304 Not Modified
             if (isset($headers['If-Modified-Since']) && strtotime($headers['If-Modified-Since']) >= strtotime('-24 hours', time()) && $count == $response['count']) {
                 // print debug
-                debug('Phonebook contacts are the same: ' . $count . ' since ' . $headers['If-Modified-Since']);
+                debug('Phonebook contacts are the same: ' . $count . ' since ' . $headers['If-Modified-Since'], $cloudDomain);
 
                 // return header 304
                 header('HTTP/1.1 304 Not Modified');
@@ -343,87 +359,118 @@ function handle($data)
             }
 
             // new contacts found, write to debug log
-            debug('Phonebook new contacts found: ' . $response['count']);
+            debug('Phonebook new contacts found: ' . $response['count'], $cloudDomain);
 
-            // make request to get all phonebook contacts
-            $url = "https://$cloudDomain/webrest/phonebook/search/?view=all";
-
-            // make request
-            $response = makeRequest($cloudUsername, $token, $url);
-
-            // create contacts object
+            // get all contacts using chunked requests for better performance
             $contacts = array();
+            $totalContacts = $response['count'];
+            $chunkSize = 8000; // Large chunks to minimize API calls
+            $offset = 0;
+            $chunkNumber = 1;
+            $totalChunks = ceil($totalContacts / $chunkSize);
 
-            // loop contacts api response
-            foreach ($response['rows'] as $contact) {
-                // compose contacts object
+            debug("Starting chunked processing: $totalContacts contacts in $totalChunks chunks of $chunkSize", $cloudDomain);
+            $overallStart = microtime(true);
+
+            while ($offset < $totalContacts) {
+                $url = "https://$cloudDomain/webrest/phonebook/search/?view=all&limit=$chunkSize&offset=$offset";
+
+                debug("Processing chunk $chunkNumber/$totalChunks (offset $offset)", $cloudDomain);
+
+                // Retry logic for failed chunks
+                $chunkResponse = false;
+                $retries = 0;
+                $maxRetries = 2;
+
+                while ($retries <= $maxRetries && ($chunkResponse === false || !isset($chunkResponse['rows']))) {
+                    if ($retries > 0) {
+                        debug("Retrying chunk $chunkNumber (attempt " . ($retries + 1) . "/" . ($maxRetries + 1) . ")", $cloudDomain);
+                        sleep(1); // Wait 1 second before retry
+                    }
+
+                    $chunkResponse = makeRequest($cloudUsername, $token, $url);
+                    $retries++;
+                }
+
+                if ($chunkResponse === false || !isset($chunkResponse['rows'])) {
+                    debug("ERROR: Failed to get phonebook chunk at offset $offset after $maxRetries retries for {$cloudUsername}", $cloudDomain);
+                    break;
+                }
+
+                $chunkCount = count($chunkResponse['rows']);
+
+                foreach ($chunkResponse['rows'] as $contact) {
+                // compose contacts object with minimal memory footprint
+                $displayName = trim(($contact["name"] ?? '') . ' ' . ($contact["surname"] ?? ''));
+                if (empty($displayName)) {
+                    $displayName = $contact["company"] ?? "Unknown Contact";
+                }
+
                 $contacts[] = [
-                    "avatar" => "",
-                    "largeAvatar" => "",
-                    "birthday" => "",
-                    "checksum" => "",
-                    "contactEntries" => [
-                        [
+                    "contactId" => $contact["id"] ?? uniqid(),
+                    "displayName" => $displayName,
+                    "fname" => $contact["name"] ?? "",
+                    "lname" => $contact["surname"] ?? "",
+                    "company" => $contact["company"] ?? "",
+                    "notes" => $contact["notes"] ?? "",
+                    "contactEntries" => array_filter([
+                        !empty($contact["homephone"]) ? [
                             "entryId" => "0",
                             "label" => "home phone",
                             "type" => "tel",
                             "uri" => $contact["homephone"]
-                        ],
-                        [
+                        ] : null,
+                        !empty($contact["workphone"]) ? [
                             "entryId" => "1",
                             "label" => "work phone",
                             "type" => "tel",
                             "uri" => $contact["workphone"]
-                        ],
-                        [
+                        ] : null,
+                        !empty($contact["cellphone"]) ? [
                             "entryId" => "2",
                             "label" => "mobile",
                             "type" => "tel",
                             "uri" => $contact["cellphone"]
-                        ],
-                        [
+                        ] : null,
+                        !empty($contact["homeemail"]) ? [
                             "entryId" => "3",
                             "label" => "home email",
                             "type" => "email",
                             "uri" => $contact["homeemail"]
-                        ],
-                        [
+                        ] : null,
+                        !empty($contact["workemail"]) ? [
                             "entryId" => "4",
                             "label" => "work email",
                             "type" => "email",
                             "uri" => $contact["workemail"]
-                        ],
-                    ],
-                    "contactAddresses" => [
-                        [
-                            "addressId" => "0",
-                            "label" => "home address",
-                            "city" => $contact["homecity"],
-                            "country" => $contact["homecountry"],
-                            "countryCode" => "",
-                            "state" => $contact["homeprovince"],
-                            "street" => $contact["homestreet"],
-                            "zip" => $contact["homepostalcode"]
-                        ],
-                        [
-                            "addressId" => "1",
-                            "label" => "work address",
-                            "city" => $contact["workcity"],
-                            "country" => $contact["workcountry"],
-                            "countryCode" => "",
-                            "state" => $contact["workprovince"],
-                            "street" => $contact["workstreet"],
-                            "zip" => $contact["workpostalcode"]
-                        ]
-                    ],
-                    "contactId" => $contact["id"],
-                    "company" => $contact["company"],
-                    "displayName" => $contact["name"],
-                    "fname" => "",
-                    "lname" => "",
-                    "notes" => $contact["notes"]
+                        ] : null
+                    ])
                 ];
+                }
+
+                // Free memory from chunk response
+                unset($chunkResponse);
+
+                // Check memory and time limits with warnings
+                $memoryUsage = round(memory_get_usage(true) / 1024 / 1024, 1);
+                $totalElapsed = microtime(true) - $overallStart;
+
+                if ($memoryUsage > 400) {
+                    debug("WARNING: Memory usage too high ({$memoryUsage}MB), stopping at chunk $chunkNumber", $cloudDomain);
+                    break;
+                }
+
+                if ($totalElapsed > 45) {
+                    debug("WARNING: Processing taking too long ({$totalElapsed}s), stopping at chunk $chunkNumber", $cloudDomain);
+                    break;
+                }
+
+                // move to next chunk
+                $offset += $chunkSize;
+                $chunkNumber++;
             }
+
+            debug("Completed chunked processing: " . count($contacts) . "/$totalContacts contacts processed", $cloudDomain);
 
             // set counter in a file
             file_put_contents("/tmp/phonebook_counters_" . $cloudDomain, $response['count']);
@@ -435,7 +482,15 @@ function handle($data)
 
             // print results
             $result = json_encode(array("contacts" => $contacts));
-            echo $result;
+
+            // Check if JSON encoding succeeded
+            if ($result === false) {
+                debug("ERROR: JSON encoding failed: " . json_last_error_msg(), $cloudDomain);
+                http_response_code(500);
+                echo '{"error": "JSON encoding failed"}';
+            } else {
+                echo $result;
+            }
 
             break;
         case 'quickdial':
@@ -445,10 +500,10 @@ function handle($data)
                 $token = getAuthToken($cloudUsername, $cloudPassword, $cloudDomain);
 
                 // print debug
-                debug("QuickDials. Token generated for {$cloudUsername}@{$cloudDomain}");
+                debug("QuickDials. Token generated for {$cloudUsername}", $cloudDomain);
             } else {
                 // print debug
-                debug("QuickDials. Password is already a token for {$cloudUsername}@{$cloudDomain}");
+                debug("QuickDials. Password is already a token for {$cloudUsername}", $cloudDomain);
 
                 // assign password as token
                 $token = $cloudPassword;
@@ -478,7 +533,6 @@ function handle($data)
                         $favorites[] = $quickdial['speeddial_num'];
 
                         // print debug message
-                        debug("Quick dials is a favorite: " . $quickdial['company'] . " " . $quickdial['speeddial_num']);
                     }
                 }
             }
@@ -503,7 +557,6 @@ function handle($data)
                         $removes[] = '<item id="' . $extension . '" action="remove"/>';
 
                         // print debug message
-                        debug("Quick dials is not a favorite: " . $extension);
                     }
                 }
             }
