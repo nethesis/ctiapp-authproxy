@@ -348,6 +348,13 @@ function handle($data)
             // get request headers
             $headers = apache_request_headers();
 
+            // Debug If-Modified-Since header
+            if (isset($headers['If-Modified-Since'])) {
+                debug("Received If-Modified-Since: " . $headers['If-Modified-Since'], $cloudDomain);
+            } else {
+                debug("No If-Modified-Since header received", $cloudDomain);
+            }
+
             // check if counter is equal or last modified is 24 hours ago, return 304 Not Modified
             if (isset($headers['If-Modified-Since']) && strtotime($headers['If-Modified-Since']) >= strtotime('-24 hours', time()) && $count == $response['count']) {
                 // print debug
