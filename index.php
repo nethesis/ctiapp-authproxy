@@ -48,7 +48,7 @@ function makeRequest($username, $token, $url)
     // Check if JSON decoding was successful
     if ($jsonResponse === null && json_last_error() !== JSON_ERROR_NONE) {
         error_log("ERROR: Failed to decode JSON: " . json_last_error_msg());
-        debug("Response: " . $response, $cloudDomain);
+        error_log("Response: " . $response);
         return false;
     }
 
