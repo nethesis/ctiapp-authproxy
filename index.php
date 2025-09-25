@@ -348,17 +348,28 @@ function handle($data)
             // get request headers
             $headers = apache_request_headers();
 
-            // Debug If-Modified-Since header
+            // Debug all received headers
+            debug("All received headers: " . json_encode($headers), $cloudDomain);
+
+            // Try multiple ways to get If-Modified-Since
+            $ifModifiedSince = null;
             if (isset($headers['If-Modified-Since'])) {
-                debug("Received If-Modified-Since: " . $headers['If-Modified-Since'], $cloudDomain);
+                $ifModifiedSince = $headers['If-Modified-Since'];
+            } elseif (isset($_SERVER['HTTP_IF_MODIFIED_SINCE'])) {
+                $ifModifiedSince = $_SERVER['HTTP_IF_MODIFIED_SINCE'];
+            }
+
+            // Debug If-Modified-Since header
+            if ($ifModifiedSince) {
+                debug("Received If-Modified-Since: " . $ifModifiedSince, $cloudDomain);
             } else {
-                debug("No If-Modified-Since header received", $cloudDomain);
+                debug("No If-Modified-Since header found (tried apache_request_headers and \$_SERVER)", $cloudDomain);
             }
 
             // check if counter is equal or last modified is 24 hours ago, return 304 Not Modified
-            if (isset($headers['If-Modified-Since']) && strtotime($headers['If-Modified-Since']) >= strtotime('-24 hours', time()) && $count == $response['count']) {
+            if ($ifModifiedSince && strtotime($ifModifiedSince) >= strtotime('-24 hours', time()) && $count == $response['count']) {
                 // print debug
-                debug('Phonebook contacts are the same: ' . $count . ' since ' . $headers['If-Modified-Since'], $cloudDomain);
+                debug('Phonebook contacts are the same: ' . $count . ' since ' . $ifModifiedSince, $cloudDomain);
 
                 // return header 304
                 header('HTTP/1.1 304 Not Modified');
