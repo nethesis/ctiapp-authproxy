@@ -495,7 +495,7 @@ function handle($data)
 
             // set headers
             header("Content-type: application/json");
-            header("Last-Modified: " . date(DATE_RFC2822));
+            header("Last-Modified: " . gmdate('D, d M Y H:i:s') . ' GMT');
             header('HTTP/1.1 200 OK');
 
             // print results
