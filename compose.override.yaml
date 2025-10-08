@@ -1,0 +1,5 @@
+services:
+  traefik:
+    ports:
+      - "8080:80"     # HTTP on higher port
+      - "8443:443"    # HTTPS on higher port

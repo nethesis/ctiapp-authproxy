@@ -1,0 +1,51 @@
+version: '3'
+
+networks:
+  app.network:
+    external: false
+
+volumes:
+  traefik-certificates:
+  traefik-config:
+
+services:
+  traefik:
+    image: traefik:v3.5
+    container_name: traefik
+    networks:
+    - app.network
+    volumes:
+      - traefik-certificates:/etc/traefik/acme               # SSL certificates storage
+      - ./traefik:/etc/traefik/config:ro                     # Static configuration files
+    command:
+      - "--api.dashboard=false"
+      - "--api.insecure=false"
+      - "--providers.file.directory=/etc/traefik/config"
+      - "--providers.file.watch=true"
+      - "--entrypoints.web.address=:80"
+      - "--entrypoints.websecure.address=:443"
+      - "--certificatesresolvers.myresolver.acme.httpchallenge=true"
+      - "--certificatesresolvers.myresolver.acme.httpchallenge.entrypoint=web"
+      - "--certificatesresolvers.myresolver.acme.storage=/etc/traefik/acme/acme.json"
+      - "--ping=true"
+    healthcheck:
+      test: ["CMD", "wget", "--spider", "--quiet", "http://localhost:8080/ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+      start_period: 5s
+    restart: unless-stopped
+
+  app:
+    image: ghcr.io/nethesis/ctiapp-authproxy:latest
+    container_name: app
+    networks:
+      - app.network
+    env_file: "./.env"
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:80/index.php/healthcheck"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
