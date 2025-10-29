@@ -1,0 +1,7 @@
+services:
+  traefik:
+    ports:
+      - "80:80"
+      - "443:443"
+  app:
+    image: ghcr.io/nethesis/ctiapp:latest

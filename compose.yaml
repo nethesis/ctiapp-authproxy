@@ -37,7 +37,6 @@ services:
     restart: unless-stopped
 
   app:
-    image: ghcr.io/nethesis/ctiapp-authproxy:latest
     container_name: app
     networks:
       - app.network
