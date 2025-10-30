@@ -17,14 +17,14 @@ RUN a2enmod rewrite
 WORKDIR /var/www/html
 
 # Copy composer files first for better layer caching
-#COPY composer.json composer.lock ./
+#COPY app/composer.json app/composer.lock ./
 
 # Install PHP dependencies if composer is available
 # For now, we'll skip this since there are no dependencies beyond PHP
 # RUN composer install --no-dev --optimize-autoloader
 
 # Copy application source code
-COPY . .
+COPY app/ .
 
 # Set proper permissions
 RUN chown -R www-data:www-data /var/www/html \
