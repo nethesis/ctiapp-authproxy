@@ -17,7 +17,7 @@ RUN a2enmod rewrite
 WORKDIR /var/www/html
 
 # Copy composer files first for better layer caching
-COPY composer.json composer.lock ./
+#COPY composer.json composer.lock ./
 
 # Install PHP dependencies if composer is available
 # For now, we'll skip this since there are no dependencies beyond PHP
