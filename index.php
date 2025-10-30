@@ -431,7 +431,7 @@ function handle($data)
                     "lname" => $contact["surname"] ?? "",
                     "company" => $contact["company"] ?? "",
                     "notes" => $contact["notes"] ?? "",
-                    "contactEntries" => array_filter([
+                    "contactEntries" => array_values(array_filter([
                         !empty($contact["homephone"]) ? [
                             "entryId" => "0",
                             "label" => "home phone",
@@ -462,7 +462,29 @@ function handle($data)
                             "type" => "email",
                             "uri" => $contact["workemail"]
                         ] : null
-                    ])
+                    ])),
+                    "contactAddresses" => array_values(array_filter([
+                        (!empty($contact["homestreet"]) || !empty($contact["homecity"]) || !empty($contact["homeprovince"]) || !empty($contact["homepostalcode"]) || !empty($contact["homecountry"])) ? [
+                            "addressId" => "0",
+                            "label" => "home address",
+                            "city" => $contact["homecity"] ?? "",
+                            "country" => $contact["homecountry"] ?? "",
+                            "countryCode" => "",
+                            "state" => $contact["homeprovince"] ?? "",
+                            "street" => $contact["homestreet"] ?? "",
+                            "zip" => $contact["homepostalcode"] ?? ""
+                        ] : null,
+                        (!empty($contact["workstreet"]) || !empty($contact["workcity"]) || !empty($contact["workprovince"]) || !empty($contact["workpostalcode"]) || !empty($contact["workcountry"])) ? [
+                            "addressId" => "1",
+                            "label" => "work address",
+                            "city" => $contact["workcity"] ?? "",
+                            "country" => $contact["workcountry"] ?? "",
+                            "countryCode" => "",
+                            "state" => $contact["workprovince"] ?? "",
+                            "street" => $contact["workstreet"] ?? "",
+                            "zip" => $contact["workpostalcode"] ?? ""
+                        ] : null
+                    ]))
                 ];
                 }
 
