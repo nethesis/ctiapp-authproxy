@@ -185,6 +185,106 @@ function getSipCredentials($cloudUsername, $cloudPassword, $cloudDomain, $isToke
     return false;
 }
 
+// helper to perform POST JSON requests and return decoded JSON or false
+function postJsonRequest($url, $payload = [], $headers = [])
+{
+    $ch = curl_init($url);
+    curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
+    curl_setopt($ch, CURLOPT_SSL_VERIFYPEER, false);
+    curl_setopt($ch, CURLOPT_POST, true);
+    curl_setopt($ch, CURLOPT_POSTFIELDS, json_encode($payload));
+
+    $defaultHeaders = ["Content-Type: application/json"]; 
+    $allHeaders = array_merge($defaultHeaders, $headers);
+    curl_setopt($ch, CURLOPT_HTTPHEADER, $allHeaders);
+
+    $response = curl_exec($ch);
+
+    if ($response === false) {
+        error_log("ERROR: cURL POST failed: " . curl_error($ch) . " for URL: $url");
+        curl_close($ch);
+        return false;
+    }
+
+    curl_close($ch);
+
+    $json = json_decode($response, true);
+    if ($json === null && json_last_error() !== JSON_ERROR_NONE) {
+        error_log("ERROR: Failed to decode JSON POST response: " . json_last_error_msg());
+        error_log("Response: " . $response);
+        return false;
+    }
+
+    return $json;
+}
+
+// makeCTIRequest: login to CTI API to obtain JWT then run the actual request with Bearer token
+// $cloudDomain: e.g. "cti.gs.nethserver.net"
+// $username, $password: credentials for login
+// $method: HTTP method for actual request (GET, POST,...)
+// $path: path for actual request (e.g. '/api/chat')
+// $body: optional payload for actual request (array)
+function makeCTIRequest($cloudDomain, $username, $password, $method, $path, $body = null)
+{
+    $cloudBaseUrl = "https://$cloudDomain";
+
+    // Step 1: login and get token
+    $loginUrl = rtrim($cloudBaseUrl, '/') . '/api/login';
+    debug("Logging in to $loginUrl as $username", $cloudDomain);
+
+    $loginPayload = [
+        'username' => $username,
+        'password' => $password
+    ];
+
+    $loginResp = postJsonRequest($loginUrl, $loginPayload);
+    if ($loginResp === false || !isset($loginResp['token'])) {
+        error_log("ERROR: Failed to login to CTI at $loginUrl");
+        return [ 'code' => -1, 'body' => null ];
+    }
+
+    $token = $loginResp['token'];
+    debug("Received JWT for $username", $cloudDomain);
+
+    // Step 2: perform actual request using Bearer token
+    $requestUrl = rtrim($cloudBaseUrl, '/') . '/' . ltrim($path, '/');
+    $headers = ["Authorization: Bearer $token", 'Accept: application/json', 'Content-Type: application/json'];
+
+    $ch = curl_init($requestUrl);
+    curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
+    curl_setopt($ch, CURLOPT_SSL_VERIFYPEER, false);
+    curl_setopt($ch, CURLOPT_CUSTOMREQUEST, strtoupper($method));
+    curl_setopt($ch, CURLOPT_HTTPHEADER, $headers);
+
+    if ($body !== null) {
+        $payload = json_encode($body);
+        curl_setopt($ch, CURLOPT_POSTFIELDS, $payload);
+    }
+
+    $response = curl_exec($ch);
+
+    if ($response === false) {
+        $err = curl_error($ch);
+        $httpCode = curl_getinfo($ch, CURLINFO_HTTP_CODE);
+        curl_close($ch);
+        error_log("ERROR: cURL CTI request failed: $err (HTTP $httpCode) for URL: $requestUrl");
+        return [ 'code' => -1, 'body' => null ];
+    }
+
+    $httpCode = curl_getinfo($ch, CURLINFO_HTTP_CODE);
+    curl_close($ch);
+
+    // decode JSON if possible
+    $json = json_decode($response, true);
+    if ($json === null && json_last_error() !== JSON_ERROR_NONE) {
+        // return raw response if not JSON
+        debug("CTI request returned non-JSON or empty response (HTTP $httpCode)", $cloudDomain);
+        return ['code' => $httpCode, 'raw' => $response];
+    }
+
+    return ['code' => $httpCode, 'body' => $json];
+}
+
 function handle($data)
 {
     // check if username, password and token are set
@@ -276,6 +376,29 @@ function handle($data)
                 $busylamps[] = '<uri>' . $busylamp . '</uri>';
             }
 
+            // get chat info
+            $chatResponse = makeCTIRequest($cloudDomain, $cloudUsername, $cloudPassword, "GET", "/api/chat");
+            debug("Chat API response: " . $chatResponse["code"], $cloudDomain);
+            if ($chatResponse && $chatResponse["code"] === 200 && isset($chatResponse["body"]["matrix"]["acrobits_url"])) {
+                $fetchPostData = '{ "username" : "%account[cloud_username]% ", "password" : "%account[cloud_password]%", "last_id" : "%last_known_sms_id%", "last_sent_id" : "%last_known_sent_sms_id%", "device" : "%installid%" }';
+                $sendPostData = '{ "from" : "%account[cloud_username]%", "password" : "%account[cloud_password]%", "to" : "%sms_to%", "body" : "%sms_body%", "content_type" : "%content_type%" }';
+                $pushTokenReporterPostData = '{ "username" : "%account[cloud_username]%", "password" : "%account[cloud_password]%", "token_calls" : "%pushTokenIncomingCall%", "token_msgs" : "%pushTokenOther%", "selector" : "%selector%", "appId_calls": "%pushappid_incoming_call%", "appId_msgs" : "%pushappid_other%" }';
+                $chat = "
+                    <genericSmsFetchUrl>" . $chatResponse["body"]["matrix"]["acrobits_url"] . "/api/client/fetch_messages" . "</genericSmsFetchUrl>
+                    <genericSmsFetchPostData>{$fetchPostData}</genericSmsFetchPostData>
+                    <genericSmsFetchContentType>application/json</genericSmsFetchContentType>
+                    <genericSmsSendUrl>" . $chatResponse["body"]["matrix"]["acrobits_url"] . "/api/client/send_message" . "</genericSmsSendUrl>
+                    <genericSmsSendPostData>{$sendPostData}</genericSmsSendPostData>
+                    <genericSmsSendContentType>application/json</genericSmsSendContentType>
+                    <pushTokenReporterUrl>" . $chatResponse["body"]["matrix"]["acrobits_url"] . "/api/client/push_token_report" . "</pushTokenReporterUrl>
+                    <pushTokenReporterPostData>{$pushTokenReporterPostData}</pushTokenReporterPostData>
+                    <pushTokenReporterContentType>application/json</pushTokenReporterContentType>
+                ";
+            } else {
+                $chat = "";
+                debug("No chat configuration found for {$cloudUsername}@{$cloudDomain}", $cloudDomain);
+            }
+
             // set headers
             header("Content-type: text/xml");
 
@@ -300,6 +423,7 @@ function handle($data)
                     <host>{$cloudDomain}</host>
                     <transport>tls+sip:</transport>
                     <blf>" . implode("", $busylamps) . "</blf>
+                    $chat
                     </account>
                     ";
 
