@@ -35,12 +35,9 @@ function makeRequest($username, $token, $url)
     if (curl_error($ch)) {
         $error = curl_error($ch);
         $httpCode = curl_getinfo($ch, CURLINFO_HTTP_CODE);
-        curl_close($ch);
         error_log("ERROR: cURL failed: $error (HTTP $httpCode) for URL: $url");
         return false;
     }
-
-    curl_close($ch);
 
     // read response
     $jsonResponse = json_decode($response, true);
@@ -77,14 +74,12 @@ function getAuthToken($cloudUsername, $cloudPassword, $cloudDomain)
     // Add error handling for curl execution
     if ($response === false) {
         error_log("ERROR: cURL error during authentication: " . curl_error($ch));
-        curl_close($ch);
         return false;
     }
 
     $httpCode = curl_getinfo($ch, CURLINFO_HTTP_CODE);
 
     // close curl and read response
-    curl_close($ch);
     if ($httpCode !== 401) {
         error_log("ERROR: Authentication failed for {$cloudUsername}@{$cloudDomain}. Expected HTTP code 401, got $httpCode");
         return false;
@@ -152,7 +147,6 @@ function getSipCredentials($cloudUsername, $cloudPassword, $cloudDomain, $isToke
         // exec curl
         $lkcheck = curl_exec($ch);
         $httpCode = curl_getinfo($ch, CURLINFO_HTTP_CODE);
-        curl_close($ch);
 
         // print debug
         debug("lkhash validated for {$cloudUsername}@{$cloudDomain}", $cloudDomain);
@@ -202,11 +196,8 @@ function postJsonRequest($url, $payload = [], $headers = [])
 
     if ($response === false) {
         error_log("ERROR: cURL POST failed: " . curl_error($ch) . " for URL: $url");
-        curl_close($ch);
         return false;
     }
-
-    curl_close($ch);
 
     $json = json_decode($response, true);
     if ($json === null && json_last_error() !== JSON_ERROR_NONE) {
@@ -266,13 +257,11 @@ function makeCTIRequest($cloudDomain, $username, $password, $method, $path, $bod
     if ($response === false) {
         $err = curl_error($ch);
         $httpCode = curl_getinfo($ch, CURLINFO_HTTP_CODE);
-        curl_close($ch);
         error_log("ERROR: cURL CTI request failed: $err (HTTP $httpCode) for URL: $requestUrl");
         return [ 'code' => -1, 'body' => null ];
     }
 
     $httpCode = curl_getinfo($ch, CURLINFO_HTTP_CODE);
-    curl_close($ch);
 
     // decode JSON if possible
     $json = json_decode($response, true);
