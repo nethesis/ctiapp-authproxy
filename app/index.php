@@ -38,7 +38,7 @@ function makeRequest($username, $token, $url)
         error_log("ERROR: cURL failed: $error (HTTP $httpCode) for URL: $url");
         return false;
     }
-
+    
     // read response
     $jsonResponse = json_decode($response, true);
 
@@ -194,15 +194,17 @@ function postJsonRequest($url, $payload = [], $headers = [])
 
     $response = curl_exec($ch);
 
-    if ($response === false) {
-        error_log("ERROR: cURL POST failed: " . curl_error($ch) . " for URL: $url");
+    if (curl_error($ch) || curl_getinfo($ch, CURLINFO_HTTP_CODE) >= 400 || $response === false) {
+        $error = curl_error($ch);
+        $httpCode = curl_getinfo($ch, CURLINFO_HTTP_CODE);
+        error_log("ERROR: cURL POST request failed: $error (HTTP $httpCode) for URL: $url");
         return false;
     }
 
     $json = json_decode($response, true);
     if ($json === null && json_last_error() !== JSON_ERROR_NONE) {
         error_log("ERROR: Failed to decode JSON POST response: " . json_last_error_msg());
-        error_log("Response: " . $response);
+        error_log("ERROR: Response: " . $response);
         return false;
     }
 
@@ -372,17 +374,16 @@ function handle($data)
                 $fetchPostData = '{ "username" : "%account[cloud_username]% ", "password" : "%account[cloud_password]%", "last_id" : "%last_known_sms_id%", "last_sent_id" : "%last_known_sent_sms_id%", "device" : "%installid%" }';
                 $sendPostData = '{ "from" : "%account[cloud_username]%", "password" : "%account[cloud_password]%", "to" : "%sms_to%", "body" : "%sms_body%", "content_type" : "%content_type%" }';
                 $pushTokenReporterPostData = '{ "username" : "%account[cloud_username]%", "password" : "%account[cloud_password]%", "token_calls" : "%pushTokenIncomingCall%", "token_msgs" : "%pushTokenOther%", "selector" : "%selector%", "appId_calls": "%pushappid_incoming_call%", "appId_msgs" : "%pushappid_other%" }';
-                $chat = "
-                    <genericSmsFetchUrl>" . $chatResponse["body"]["matrix"]["acrobits_url"] . "/api/client/fetch_messages" . "</genericSmsFetchUrl>
-                    <genericSmsFetchPostData>{$fetchPostData}</genericSmsFetchPostData>
-                    <genericSmsFetchContentType>application/json</genericSmsFetchContentType>
-                    <genericSmsSendUrl>" . $chatResponse["body"]["matrix"]["acrobits_url"] . "/api/client/send_message" . "</genericSmsSendUrl>
-                    <genericSmsSendPostData>{$sendPostData}</genericSmsSendPostData>
-                    <genericSmsSendContentType>application/json</genericSmsSendContentType>
-                    <pushTokenReporterUrl>" . $chatResponse["body"]["matrix"]["acrobits_url"] . "/api/client/push_token_report" . "</pushTokenReporterUrl>
-                    <pushTokenReporterPostData>{$pushTokenReporterPostData}</pushTokenReporterPostData>
-                    <pushTokenReporterContentType>application/json</pushTokenReporterContentType>
-                ";
+                $chat = "".
+                    "<genericSmsFetchUrl>" . $chatResponse["body"]["matrix"]["acrobits_url"] . "/api/client/fetch_messages" . "</genericSmsFetchUrl>\n".
+                    "<genericSmsFetchPostData>{$fetchPostData}</genericSmsFetchPostData>\n".
+                    "<genericSmsFetchContentType>application/json</genericSmsFetchContentType>\n".
+                    "<genericSmsSendUrl>" . $chatResponse["body"]["matrix"]["acrobits_url"] . "/api/client/send_message" . "</genericSmsSendUrl>\n".
+                    "<genericSmsSendPostData>{$sendPostData}</genericSmsSendPostData>\n".
+                    "<genericSmsSendContentType>application/json</genericSmsSendContentType>\n".
+                    "<pushTokenReporterUrl>" . $chatResponse["body"]["matrix"]["acrobits_url"] . "/api/client/push_token_report" . "</pushTokenReporterUrl>\n".
+                    "<pushTokenReporterPostData>{$pushTokenReporterPostData}</pushTokenReporterPostData>\n".
+                    "<pushTokenReporterContentType>application/json</pushTokenReporterContentType>\n";
             } else {
                 $chat = "";
                 debug("No chat configuration found for {$cloudUsername}@{$cloudDomain}", $cloudDomain);
