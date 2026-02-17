@@ -17,8 +17,8 @@ function debug($message, $domain = null)
     }
 }
 
-// function to make http GET requests
-function makeRequest($username, $token, $url)
+// function to make authenticated HTTP requests
+function makeRequest($token, $url, $authType = 'bearer', $username = null)
 {
     // init curl
     $ch = curl_init($url);
@@ -27,7 +27,11 @@ function makeRequest($username, $token, $url)
     curl_setopt($ch, CURLOPT_TIMEOUT, 60); // 60 second timeout for large requests
 
     // set headers
-    $headers = array("Authorization: $username:$token");
+    if ($authType === 'legacy') {
+        $headers = array("Authorization: $username:$token");
+    } else {
+        $headers = array("Authorization: Bearer $token");
+    }
     curl_setopt($ch, CURLOPT_HTTPHEADER, $headers);
     $response = curl_exec($ch);
 
@@ -56,8 +60,57 @@ function makeRequest($username, $token, $url)
     return $jsonResponse;
 }
 
-// function get auth token
-function getAuthToken($cloudUsername, $cloudPassword, $cloudDomain)
+// function get auth JWT from middleware
+function getJWTToken($cloudUsername, $cloudPassword, $cloudDomain)
+{
+    $loginPayload = json_encode([
+        'username' => $cloudUsername,
+        'password' => $cloudPassword
+    ]);
+
+    $loginUrl = "https://$cloudDomain/api/login";
+    $ch = curl_init($loginUrl);
+    curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
+    curl_setopt($ch, CURLOPT_POST, true);
+    curl_setopt($ch, CURLOPT_POSTFIELDS, $loginPayload);
+    curl_setopt($ch, CURLOPT_SSL_VERIFYPEER, false);
+    curl_setopt($ch, CURLOPT_HTTPHEADER, [
+        'Content-Type: application/json',
+        'Accept: application/json'
+    ]);
+
+    $response = curl_exec($ch);
+    if ($response === false) {
+        error_log("ERROR: cURL error during JWT authentication to {$loginUrl}: " . curl_error($ch));
+        curl_close($ch);
+        return false;
+    }
+
+    $httpCode = curl_getinfo($ch, CURLINFO_HTTP_CODE);
+    curl_close($ch);
+
+    if ($httpCode !== 200) {
+        debug("JWT authentication failed on {$loginUrl} for {$cloudUsername}@{$cloudDomain}. HTTP code {$httpCode}", $cloudDomain);
+        return false;
+    }
+
+    $jsonResponse = json_decode($response, true);
+    if ($jsonResponse === null && json_last_error() !== JSON_ERROR_NONE) {
+        error_log("ERROR: Failed to decode JWT login response from {$loginUrl}: " . json_last_error_msg());
+        return false;
+    }
+
+    if (!isset($jsonResponse['token']) || !is_string($jsonResponse['token']) || $jsonResponse['token'] === '') {
+        error_log("ERROR: Missing JWT token in response from {$loginUrl} for {$cloudUsername}@{$cloudDomain}");
+        return false;
+    }
+
+    debug("JWT token generated for {$cloudUsername}@{$cloudDomain} using {$loginUrl}", $cloudDomain);
+    return $jsonResponse['token'];
+}
+
+// function get legacy auth token from cti-server
+function getLegacyAuthToken($cloudUsername, $cloudPassword, $cloudDomain)
 {
     // compose login url
     $authUrl = "https://$cloudDomain/webrest/authentication/login";
@@ -73,68 +126,119 @@ function getAuthToken($cloudUsername, $cloudPassword, $cloudDomain)
 
     // get response
     $response = curl_exec($ch);
-
-    // Add error handling for curl execution
     if ($response === false) {
-        error_log("ERROR: cURL error during authentication: " . curl_error($ch));
+        error_log("ERROR: cURL error during legacy authentication: " . curl_error($ch));
         curl_close($ch);
         return false;
     }
 
     $httpCode = curl_getinfo($ch, CURLINFO_HTTP_CODE);
-
-    // close curl and read response
     curl_close($ch);
     if ($httpCode !== 401) {
-        error_log("ERROR: Authentication failed for {$cloudUsername}@{$cloudDomain}. Expected HTTP code 401, got $httpCode");
+        debug("Legacy authentication failed for {$cloudUsername}@{$cloudDomain}. Expected HTTP 401, got {$httpCode}", $cloudDomain);
         return false;
     }
 
     // extract the nonce from the response header
     preg_match('/uthenticate: Digest ([0-9a-f]+)/', $response, $matches);
-
-    // if nonce is empty, return error
     if (!isset($matches[1])) {
-        error_log("ERROR: Authentication failed for {$cloudUsername}@{$cloudDomain}. No nonce found in response");
+        error_log("ERROR: Legacy authentication failed for {$cloudUsername}@{$cloudDomain}. No nonce found");
         return false;
     }
 
-    // read nonce
     $nonce = $matches[1];
-
-    // build the authentication token
     $tohash = "$cloudUsername:$cloudPassword:$nonce";
     $token = hash_hmac('sha1', $tohash, $cloudPassword);
 
-    // print debug
-    debug("Token generated for {$cloudUsername}@{$cloudDomain}", $cloudDomain);
-
+    debug("Legacy token generated for {$cloudUsername}@{$cloudDomain}", $cloudDomain);
     return $token;
+}
+
+function isValidUserMeResponse($response)
+{
+    return is_array($response) && isset($response['endpoints']) && isset($response['endpoints']['extension']);
+}
+
+function buildApiUrl($cloudDomain, $basePath, $endpointPath)
+{
+    return "https://$cloudDomain{$basePath}{$endpointPath}";
+}
+
+// Build auth context with automatic fallback:
+// 1) middleware mode: /api + Authorization: Bearer <jwt>
+// 2) legacy mode: /webrest + Authorization: username:token
+function getAuthContext($cloudUsername, $cloudPassword, $cloudDomain, $isToken = false)
+{
+    if (!$isToken) {
+        // try middleware first
+        $jwtToken = getJWTToken($cloudUsername, $cloudPassword, $cloudDomain);
+        if ($jwtToken) {
+            $userMe = makeRequest($jwtToken, buildApiUrl($cloudDomain, '/api', '/user/me'), 'bearer');
+            if (isValidUserMeResponse($userMe)) {
+                debug("Using middleware mode for {$cloudUsername}@{$cloudDomain}", $cloudDomain);
+                return [
+                    'basePath' => '/api',
+                    'authType' => 'bearer',
+                    'token' => $jwtToken,
+                    'userMe' => $userMe
+                ];
+            }
+        }
+
+        // fallback to legacy
+        $legacyToken = getLegacyAuthToken($cloudUsername, $cloudPassword, $cloudDomain);
+        if ($legacyToken) {
+            $userMe = makeRequest($legacyToken, buildApiUrl($cloudDomain, '/webrest', '/user/me'), 'legacy', $cloudUsername);
+            if (isValidUserMeResponse($userMe)) {
+                debug("Using legacy mode for {$cloudUsername}@{$cloudDomain}", $cloudDomain);
+                return [
+                    'basePath' => '/webrest',
+                    'authType' => 'legacy',
+                    'token' => $legacyToken,
+                    'userMe' => $userMe
+                ];
+            }
+        }
+    } else {
+        // qrcode/token-based login: try token as JWT first
+        $userMe = makeRequest($cloudPassword, buildApiUrl($cloudDomain, '/api', '/user/me'), 'bearer');
+        if (isValidUserMeResponse($userMe)) {
+            debug("Using middleware token mode for {$cloudUsername}@{$cloudDomain}", $cloudDomain);
+            return [
+                'basePath' => '/api',
+                'authType' => 'bearer',
+                'token' => $cloudPassword,
+                'userMe' => $userMe
+            ];
+        }
+
+        // fallback: token is legacy hash
+        $userMe = makeRequest($cloudPassword, buildApiUrl($cloudDomain, '/webrest', '/user/me'), 'legacy', $cloudUsername);
+        if (isValidUserMeResponse($userMe)) {
+            debug("Using legacy token mode for {$cloudUsername}@{$cloudDomain}", $cloudDomain);
+            return [
+                'basePath' => '/webrest',
+                'authType' => 'legacy',
+                'token' => $cloudPassword,
+                'userMe' => $userMe
+            ];
+        }
+    }
+
+    return false;
 }
 
 // login to cti using the cloud credentials and get the sip credentials using the /user/me API
 function getSipCredentials($cloudUsername, $cloudPassword, $cloudDomain, $isToken = false)
 {
-    // Step 1: Authenticate and obtain the authentication token if isToken is false
-    if (!$isToken) {
-        // get auth token
-        $token = getAuthToken($cloudUsername, $cloudPassword, $cloudDomain);
-
-        // print debug
-        debug("Token generated for {$cloudUsername}@{$cloudDomain}", $cloudDomain);
-    } else {
-        // print debug
-        debug("Password is already a token for {$cloudUsername}@{$cloudDomain}", $cloudDomain);
-
-        // assign password as token
-        $token = $cloudPassword;
+    $authContext = getAuthContext($cloudUsername, $cloudPassword, $cloudDomain, $isToken);
+    if (!$authContext) {
+        error_log("ERROR: Authentication failed for {$cloudUsername}@{$cloudDomain} in both middleware and legacy modes");
+        return false;
     }
 
-    // Step 2: Make the request to user/me API
-    $url = "https://$cloudDomain/webrest/user/me";
-
-    // make response
-    $response = makeRequest($cloudUsername, $token, $url);
+    // user/me response was already validated while building auth context
+    $response = $authContext['userMe'];
 
     // Step 3: check if lk is set and is valid
     if (isset($response['lkhash'])) {
@@ -175,7 +279,8 @@ function getSipCredentials($cloudUsername, $cloudPassword, $cloudDomain, $isToke
             return [
                 'sipUser' => $sipUser,
                 'sipPassword' => $sipPassword,
-                'proxy_fqdn' => (isset($response['proxy_fqdn']) ? $response['proxy_fqdn'] : "")
+                'proxy_fqdn' => (isset($response['proxy_fqdn']) ? $response['proxy_fqdn'] : ""),
+                'authContext' => $authContext
             ];
         }
     }
@@ -243,26 +348,17 @@ function handle($data)
                 return header("HTTP/1.0 404 Not Found");
             }
 
-            // check auth token
-            if (!$isToken) {
-                // get auth token
-                $token = getAuthToken($cloudUsername, $cloudPassword, $cloudDomain);
-
-                // print debug
-                debug("Token generated for {$cloudUsername}@{$cloudDomain}", $cloudDomain);
-            } else {
-                // print debug
-                debug("Password is already a token for {$cloudUsername}@{$cloudDomain}", $cloudDomain);
-
-                // assign password as token
-                $token = $cloudPassword;
+            $authContext = isset($result['authContext']) ? $result['authContext'] : getAuthContext($cloudUsername, $cloudPassword, $cloudDomain, $isToken);
+            if (!$authContext) {
+                error_log("ERROR: Failed to get auth context for {$cloudUsername}@{$cloudDomain}");
+                return header("HTTP/1.0 404 Not Found");
             }
 
             // get busy lamp extensions
-            $url = "https://$cloudDomain/webrest/user/endpoints/all";
+            $url = buildApiUrl($cloudDomain, $authContext['basePath'], '/user/endpoints/all');
 
             // make request
-            $response = makeRequest($cloudUsername, $token, $url);
+            $response = makeRequest($authContext['token'], $url, $authContext['authType'], $cloudUsername);
 
             // create busy lamp extensions object
             $busylamps = array();
@@ -312,26 +408,18 @@ function handle($data)
             break;
         // handle Contact Sources app
         case 'contacts':
-            // get auth token
-            if (!$isToken) {
-                // get auth token
-                $token = getAuthToken($cloudUsername, $cloudPassword, $cloudDomain);
-
-                // print debug
-                debug("Contacts. Token generated for {$cloudUsername}", $cloudDomain);
-            } else {
-                // print debug
-                debug("Contacts. Password is already a token for {$cloudUsername}", $cloudDomain);
-
-                // assign password as token
-                $token = $cloudPassword;
+            $authContext = getAuthContext($cloudUsername, $cloudPassword, $cloudDomain, $isToken);
+            if (!$authContext) {
+                debug("ERROR: Failed to build auth context for contacts {$cloudUsername}", $cloudDomain);
+                header("HTTP/1.0 404 Not Found");
+                return;
             }
 
             // get phonebook counters
-            $url = "https://$cloudDomain/webrest/phonebook/search/?offset=0&limit=1&view=all";
+            $url = buildApiUrl($cloudDomain, $authContext['basePath'], '/phonebook/search/?offset=0&limit=1&view=all');
 
             // make request
-            $response = makeRequest($cloudUsername, $token, $url);
+            $response = makeRequest($authContext['token'], $url, $authContext['authType'], $cloudUsername);
 
             if ($response == false) {
                 debug("ERROR: Failed to get phonebook contacts for {$cloudUsername}", $cloudDomain);
@@ -391,7 +479,7 @@ function handle($data)
             $overallStart = microtime(true);
 
             while ($offset < $totalContacts) {
-                $url = "https://$cloudDomain/webrest/phonebook/search/?view=all&limit=$chunkSize&offset=$offset";
+                $url = buildApiUrl($cloudDomain, $authContext['basePath'], "/phonebook/search/?view=all&limit=$chunkSize&offset=$offset");
 
                 debug("Processing chunk $chunkNumber/$totalChunks (offset $offset)", $cloudDomain);
 
@@ -406,7 +494,7 @@ function handle($data)
                         sleep(1); // Wait 1 second before retry
                     }
 
-                    $chunkResponse = makeRequest($cloudUsername, $token, $url);
+                    $chunkResponse = makeRequest($authContext['token'], $url, $authContext['authType'], $cloudUsername);
                     $retries++;
                 }
 
@@ -534,26 +622,18 @@ function handle($data)
 
             break;
         case 'quickdial':
-            // get auth token
-            if (!$isToken) {
-                // get auth token
-                $token = getAuthToken($cloudUsername, $cloudPassword, $cloudDomain);
-
-                // print debug
-                debug("QuickDials. Token generated for {$cloudUsername}", $cloudDomain);
-            } else {
-                // print debug
-                debug("QuickDials. Password is already a token for {$cloudUsername}", $cloudDomain);
-
-                // assign password as token
-                $token = $cloudPassword;
+            $authContext = getAuthContext($cloudUsername, $cloudPassword, $cloudDomain, $isToken);
+            if (!$authContext) {
+                debug("ERROR: Failed to build auth context for quickdial {$cloudUsername}", $cloudDomain);
+                header("HTTP/1.0 404 Not Found");
+                return;
             }
 
             // get quick dials
-            $url = "https://$cloudDomain/webrest/phonebook/speeddials";
+            $url = buildApiUrl($cloudDomain, $authContext['basePath'], '/phonebook/speeddials');
 
             // make request
-            $response = makeRequest($cloudUsername, $token, $url);
+            $response = makeRequest($authContext['token'], $url, $authContext['authType'], $cloudUsername);
 
             // create quickdials object
             $quickdials = array();
@@ -578,10 +658,10 @@ function handle($data)
             }
 
             // get all extensions
-            $url = "https://$cloudDomain/webrest/astproxy/extensions";
+            $url = buildApiUrl($cloudDomain, $authContext['basePath'], '/astproxy/extensions');
 
             // make request
-            $response = makeRequest($cloudUsername, $token, $url);
+            $response = makeRequest($authContext['token'], $url, $authContext['authType'], $cloudUsername);
 
             // create remove keys
             $removes = array();
