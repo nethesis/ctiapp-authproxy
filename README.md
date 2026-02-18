@@ -122,6 +122,49 @@ Deployment is automated using Ansible and Podman Quadlet, targeting Rocky Linux 
     -   Check status: `systemctl --user status app.service`
     -   View logs: `journalctl --user -u app.service -f`
 
+### Deploy a Local Image to a Remote Host (Test Only)
+
+Use this flow when you want to test a local image build on a remote machine.
+The deployment step is still done with `just deploy`, after setting the image
+tag in `quadlet/app.container`.
+
+1.  **Set test image tag in Quadlet**:
+    Edit `quadlet/app.container` and update:
+    ```ini
+    Image=localhost/ctiapp-authproxy:<your-test-tag>
+    ```
+1.  **Build the local image with the same tag**:
+    ```bash
+    podman build -t localhost/ctiapp-authproxy:<your-test-tag> .
+    ```
+1.  **Export the image to a tar archive**:
+    ```bash
+    podman save -o /tmp/ctiapp-authproxy-test.tar localhost/ctiapp-authproxy:<your-test-tag>
+    ```
+1.  **Copy the archive to the remote host**:
+    ```bash
+    scp /tmp/ctiapp-authproxy-test.tar root@"$APP_HOSTNAME":/tmp/
+    ```
+1.  **Load image in the `app` user's Podman storage**:
+    ```bash
+    ssh root@"$APP_HOSTNAME" 'sudo -u app podman load -i /tmp/ctiapp-authproxy-test.tar'
+    ```
+1.  **Run deployment**:
+    ```bash
+    just deploy
+    ```
+1.  **Verify the running image**:
+    ```bash
+    ssh root@"$APP_HOSTNAME" 'sudo -u app podman images | grep ctiapp-authproxy'
+    ssh root@"$APP_HOSTNAME" 'sudo -u app XDG_RUNTIME_DIR=/run/user/$(id -u app) systemctl --user status app.service'
+    ```
+
+Notes:
+- This procedure is intended for temporary test deployments.
+- Keep `quadlet/app.container` aligned with the tag you loaded remotely.
+- The loaded image can be replaced by `podman auto-update` if a newer registry image is detected.
+- To keep the test image pinned, temporarily disable auto-update for `app.service`.
+
 ### Auto-Update Mechanism
 
 The deployment includes an automatic update mechanism for the application
