@@ -269,7 +269,11 @@ function getSipCredentials($cloudUsername, $cloudPassword, $cloudDomain, $isToke
 {
     $authContext = getAuthContext($cloudUsername, $cloudPassword, $cloudDomain, $isToken, $authRejected);
     if (!$authContext) {
-        error_log("ERROR: Authentication failed for {$cloudUsername}@{$cloudDomain} in both middleware and legacy modes");
+        if ($authRejected) {
+            error_log("ERROR: Credentials rejected by upstream for {$cloudUsername}@{$cloudDomain}");
+        } else {
+            error_log("ERROR: Authentication failed for {$cloudUsername}@{$cloudDomain} in both middleware and legacy modes");
+        }
         return false;
     }
 
