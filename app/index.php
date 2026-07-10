@@ -159,6 +159,14 @@ function isValidUserMeResponse($response)
     return is_array($response) && isset($response['endpoints']) && isset($response['endpoints']['extension']);
 }
 
+function isRecordingAllowed($userMe)
+{
+    return isset($userMe['profile']['macro_permissions']['settings']['value'])
+        && $userMe['profile']['macro_permissions']['settings']['value'] === true
+        && isset($userMe['profile']['macro_permissions']['settings']['permissions']['recording']['value'])
+        && $userMe['profile']['macro_permissions']['settings']['permissions']['recording']['value'] === true;
+}
+
 function buildApiUrl($cloudDomain, $basePath, $endpointPath)
 {
     return "https://$cloudDomain{$basePath}{$endpointPath}";
@@ -624,10 +632,15 @@ function handle($data)
         case 'quickdial':
             $authContext = getAuthContext($cloudUsername, $cloudPassword, $cloudDomain, $isToken);
             if (!$authContext) {
-                debug("ERROR: Failed to build auth context for quickdial {$cloudUsername}", $cloudDomain);
-                header("HTTP/1.0 404 Not Found");
+                debug("Failed to build auth context for quickdial {$cloudUsername}, returning fail-closed norec=1", $cloudDomain);
+                header("Content-type: text/xml");
+                header('HTTP/1.1 200 OK');
+                echo '<root><modifications><prefKeys><norec>1</norec></prefKeys></modifications></root>';
                 return;
             }
+
+            $norec = isRecordingAllowed($authContext['userMe']) ? 0 : 1;
+            debug("Call recording permission for {$cloudUsername}@{$cloudDomain}: norec={$norec}", $cloudDomain);
 
             // get quick dials
             $url = buildApiUrl($cloudDomain, $authContext['basePath'], '/phonebook/speeddials');
@@ -686,7 +699,7 @@ function handle($data)
             header('HTTP/1.1 200 OK');
 
             // print results
-            echo '<root><quickDial>' . implode("", $quickdials) . implode("", $removes) . '</quickDial></root>';
+            echo '<root><modifications><prefKeys><norec>' . $norec . '</norec></prefKeys></modifications><quickDial>' . implode("", $quickdials) . implode("", $removes) . '</quickDial></root>';
 
             break;
         default:
