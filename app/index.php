@@ -18,7 +18,9 @@ function debug($message, $domain = null)
 }
 
 // function to make authenticated HTTP requests
-function makeRequest($token, $url, $authType = 'bearer', $username = null)
+// $httpCode is filled with the HTTP status code of the response
+// (stays 0 if the request fails at network level)
+function makeRequest($token, $url, $authType = 'bearer', $username = null, &$httpCode = 0)
 {
     // init curl
     $ch = curl_init($url);
@@ -44,6 +46,7 @@ function makeRequest($token, $url, $authType = 'bearer', $username = null)
         return false;
     }
 
+    $httpCode = curl_getinfo($ch, CURLINFO_HTTP_CODE);
     curl_close($ch);
 
     // read response
@@ -61,7 +64,9 @@ function makeRequest($token, $url, $authType = 'bearer', $username = null)
 }
 
 // function get auth JWT from middleware
-function getJWTToken($cloudUsername, $cloudPassword, $cloudDomain)
+// $httpCode is filled with the HTTP status code of the login request
+// (stays 0 if the request fails at network level)
+function getJWTToken($cloudUsername, $cloudPassword, $cloudDomain, &$httpCode = 0)
 {
     $loginPayload = json_encode([
         'username' => $cloudUsername,
@@ -167,11 +172,16 @@ function buildApiUrl($cloudDomain, $basePath, $endpointPath)
 // Build auth context with automatic fallback:
 // 1) middleware mode: /api + Authorization: Bearer <jwt>
 // 2) legacy mode: /webrest + Authorization: username:token
-function getAuthContext($cloudUsername, $cloudPassword, $cloudDomain, $isToken = false)
+// $authRejected is set to true only when the upstream explicitly rejected
+// the credentials (HTTP 401/403), as opposed to other failures (network
+// errors, middleware not installed, invalid responses)
+function getAuthContext($cloudUsername, $cloudPassword, $cloudDomain, $isToken = false, &$authRejected = false)
 {
+    $authRejected = false;
     if (!$isToken) {
         // try middleware first
-        $jwtToken = getJWTToken($cloudUsername, $cloudPassword, $cloudDomain);
+        $jwtHttpCode = 0;
+        $jwtToken = getJWTToken($cloudUsername, $cloudPassword, $cloudDomain, $jwtHttpCode);
         if ($jwtToken) {
             $userMe = makeRequest($jwtToken, buildApiUrl($cloudDomain, '/api', '/user/me'), 'bearer');
             if (isValidUserMeResponse($userMe)) {
@@ -183,6 +193,18 @@ function getAuthContext($cloudUsername, $cloudPassword, $cloudDomain, $isToken =
                     'userMe' => $userMe
                 ];
             }
+        }
+
+        // The middleware rejected the credentials: it has already performed
+        // the LDAP bind against the user provider (AD/LDAP), so retrying on
+        // the legacy endpoint would repeat the same failed bind and increment
+        // the AD bad password count, eventually locking the account.
+        // Fall back to legacy only when the middleware is missing (404) or
+        // unreachable (network error / 5xx).
+        if ($jwtHttpCode === 401 || $jwtHttpCode === 403) {
+            debug("Middleware rejected credentials for {$cloudUsername}@{$cloudDomain} (HTTP {$jwtHttpCode}), skipping legacy fallback", $cloudDomain);
+            $authRejected = true;
+            return false;
         }
 
         // fallback to legacy
@@ -201,7 +223,8 @@ function getAuthContext($cloudUsername, $cloudPassword, $cloudDomain, $isToken =
         }
     } else {
         // qrcode/token-based login: try token as JWT first
-        $userMe = makeRequest($cloudPassword, buildApiUrl($cloudDomain, '/api', '/user/me'), 'bearer');
+        $bearerHttpCode = 0;
+        $userMe = makeRequest($cloudPassword, buildApiUrl($cloudDomain, '/api', '/user/me'), 'bearer', null, $bearerHttpCode);
         if (isValidUserMeResponse($userMe)) {
             debug("Using middleware token mode for {$cloudUsername}@{$cloudDomain}", $cloudDomain);
             return [
@@ -213,7 +236,8 @@ function getAuthContext($cloudUsername, $cloudPassword, $cloudDomain, $isToken =
         }
 
         // fallback: token is legacy hash
-        $userMe = makeRequest($cloudPassword, buildApiUrl($cloudDomain, '/webrest', '/user/me'), 'legacy', $cloudUsername);
+        $legacyHttpCode = 0;
+        $userMe = makeRequest($cloudPassword, buildApiUrl($cloudDomain, '/webrest', '/user/me'), 'legacy', $cloudUsername, $legacyHttpCode);
         if (isValidUserMeResponse($userMe)) {
             debug("Using legacy token mode for {$cloudUsername}@{$cloudDomain}", $cloudDomain);
             return [
@@ -223,17 +247,33 @@ function getAuthContext($cloudUsername, $cloudPassword, $cloudDomain, $isToken =
                 'userMe' => $userMe
             ];
         }
+
+        // The token has been explicitly rejected on both endpoints: it has
+        // been revoked or regenerated server side (e.g. a new QR code was
+        // created). Other combinations (network error, middleware missing)
+        // are not treated as a rejection.
+        if (($bearerHttpCode === 401 || $bearerHttpCode === 403) &&
+            ($legacyHttpCode === 401 || $legacyHttpCode === 403)) {
+            debug("Token rejected on both endpoints for {$cloudUsername}@{$cloudDomain}", $cloudDomain);
+            $authRejected = true;
+        }
     }
 
     return false;
 }
 
 // login to cti using the cloud credentials and get the sip credentials using the /user/me API
-function getSipCredentials($cloudUsername, $cloudPassword, $cloudDomain, $isToken = false)
+// $authRejected is set to true when the failure is an explicit credential
+// rejection (see getAuthContext)
+function getSipCredentials($cloudUsername, $cloudPassword, $cloudDomain, $isToken = false, &$authRejected = false)
 {
-    $authContext = getAuthContext($cloudUsername, $cloudPassword, $cloudDomain, $isToken);
+    $authContext = getAuthContext($cloudUsername, $cloudPassword, $cloudDomain, $isToken, $authRejected);
     if (!$authContext) {
-        error_log("ERROR: Authentication failed for {$cloudUsername}@{$cloudDomain} in both middleware and legacy modes");
+        if ($authRejected) {
+            error_log("ERROR: Credentials rejected by upstream for {$cloudUsername}@{$cloudDomain}");
+        } else {
+            error_log("ERROR: Authentication failed for {$cloudUsername}@{$cloudDomain} in both middleware and legacy modes");
+        }
         return false;
     }
 
@@ -340,10 +380,19 @@ function handle($data)
         // handle External Provisioning app
         case 'login':
             // get sip credentials with POST data
-            $result = getSipCredentials($cloudUsername, $cloudPassword, $cloudDomain, $isToken);
+            $authRejected = false;
+            $result = getSipCredentials($cloudUsername, $cloudPassword, $cloudDomain, $isToken, $authRejected);
 
             // check if sip credentials exists
             if (!$result) {
+                // Credentials explicitly rejected upstream (e.g. password
+                // changed on AD/LDAP or QR token revoked): answer with the
+                // extProvLogoutStatusCode so the app logs the user out and
+                // asks for new credentials instead of retrying forever.
+                if ($authRejected) {
+                    error_log("ERROR: Credentials rejected for {$cloudUsername}@{$cloudDomain}, asking the app to log out");
+                    return header("HTTP/1.1 410 Gone");
+                }
                 error_log("ERROR: Failed to get sip credentials for {$cloudUsername}@{$cloudDomain}");
                 return header("HTTP/1.0 404 Not Found");
             }
@@ -392,6 +441,7 @@ function handle($data)
                     <username>{$result['sipUser']}</username>
                     <password>{$result['sipPassword']}</password>
                     <extProvInterval>3600</extProvInterval>
+                    <extProvLogoutStatusCode>410</extProvLogoutStatusCode>
                     $proxy
                     <host>{$cloudDomain}</host>
                     <transport>tls+sip:</transport>
