@@ -17,6 +17,11 @@ function debug($message, $domain = null)
     }
 }
 
+function escapeXml($value)
+{
+    return htmlspecialchars((string) $value, ENT_QUOTES | ENT_XML1 | ENT_SUBSTITUTE | ENT_DISALLOWED, 'UTF-8');
+}
+
 // function to make authenticated HTTP requests
 // $httpCode is filled with the HTTP status code of the response
 // (stays 0 if the request fails at network level)
@@ -710,7 +715,9 @@ function handle($data)
                     // check if type is speeddial-favorite
                     if ($quickdial['notes'] == 'speeddial-favorite') {
                         // compose xml structure
-                        $quickdials[] = '<item id="' . $quickdial['speeddial_num'] . '"><displayName>' . $quickdial['company'] . '</displayName><uri>' . $quickdial['speeddial_num'] . '</uri></item>';
+                        $quickdials[] = '<item id="' . escapeXml($quickdial['speeddial_num']) . '">'
+                            . '<displayName>' . escapeXml($quickdial['company']) . '</displayName>'
+                            . '<uri>' . escapeXml($quickdial['speeddial_num']) . '</uri></item>';
 
                         // add favorite num to list, useful to check extensions to remove from list
                         $favorites[] = $quickdial['speeddial_num'];
@@ -737,7 +744,7 @@ function handle($data)
                 foreach ($extensions as $extension) {
                     if (!in_array($extension, $favorites)) {
                         // compose xml structure
-                        $removes[] = '<item id="' . $extension . '" action="remove"/>';
+                        $removes[] = '<item id="' . escapeXml($extension) . '" action="remove"/>';
 
                         // print debug message
                     }
