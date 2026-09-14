@@ -2,7 +2,21 @@
 FROM php:8.0-apache
 
 # Install system dependencies
-RUN apt-get update && apt-get install -y \
+# Bullseye LTS ended on 2026-08-31; no further official security updates are planned.
+# Third-party Extended LTS may support selected packages separately:
+# https://www.debian.org/News/2026/20260831
+# Restore reliable build downloads using archive.debian.org for bullseye and
+# bullseye-updates, plus the fixed 2026-09-01 snapshot for bullseye-security.
+# The snapshot avoids live-mirror package 404s and retains final LTS versions.
+# It does not extend Debian 11 security support. Any later fix requires changing
+# these sources; rebuilding cannot fetch updates beyond the fixed snapshot.
+# check-valid-until=no skips only snapshot metadata expiry; signature and checksum
+# verification remain enabled. See https://snapshot.debian.org/
+RUN sed -i \
+        -e 's|deb\.debian\.org/debian |archive.debian.org/debian |g' \
+        -e 's|http://deb\.debian\.org/debian-security |[check-valid-until=no] http://snapshot.debian.org/archive/debian-security/20260901T000000Z/ |g' \
+        /etc/apt/sources.list && \
+    apt-get update && apt-get install -y \
     libcurl4-openssl-dev \
     curl \
     && rm -rf /var/lib/apt/lists/*
