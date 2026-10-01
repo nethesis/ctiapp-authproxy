@@ -298,6 +298,9 @@ function getSipCredentials($cloudUsername, $cloudPassword, $cloudDomain, $isToke
         curl_setopt($ch, CURLOPT_SSL_VERIFYPEER, false);
         // do not print the answer into the provisioning XML
         curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
+        // bounded wait: on timeout httpCode is 0 and the provisioning is refused
+        curl_setopt($ch, CURLOPT_CONNECTTIMEOUT, 5);
+        curl_setopt($ch, CURLOPT_TIMEOUT, 10);
 
         // set headers
         $headers = array("Authorization: Bearer " . $response['lkhash']);
