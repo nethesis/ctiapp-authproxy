@@ -296,6 +296,11 @@ function getSipCredentials($cloudUsername, $cloudPassword, $cloudDomain, $isToke
         // create curl state
         $ch = curl_init($url);
         curl_setopt($ch, CURLOPT_SSL_VERIFYPEER, false);
+        // do not print the answer into the provisioning XML
+        curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
+        // bounded wait: on timeout httpCode is 0 and the provisioning is refused
+        curl_setopt($ch, CURLOPT_CONNECTTIMEOUT, 5);
+        curl_setopt($ch, CURLOPT_TIMEOUT, 10);
 
         // set headers
         $headers = array("Authorization: Bearer " . $response['lkhash']);
@@ -336,6 +341,35 @@ function getSipCredentials($cloudUsername, $cloudPassword, $cloudDomain, $isToke
     // if step 4 has no endpoints, return false
     debug("No endpoints found for {$cloudUsername}@{$cloudDomain}", $cloudDomain);
     return false;
+}
+
+// NethVoice chat: add the app messaging services when the tenant has the chat gateway
+function chatAccountXml($cloudDomain)
+{
+    $base = "https://$cloudDomain/chat-gw";
+    $ch = curl_init("$base/healthz");
+    curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
+    curl_setopt($ch, CURLOPT_SSL_VERIFYPEER, false);
+    curl_setopt($ch, CURLOPT_CONNECTTIMEOUT, 2);
+    curl_setopt($ch, CURLOPT_TIMEOUT, 3);
+    curl_exec($ch);
+    $code = curl_getinfo($ch, CURLINFO_HTTP_CODE);
+    curl_close($ch);
+    if ($code != 200) {
+        return "";
+    }
+    $fetch = '{"username":"%account[cloud_username]%","password":"%account[cloud_password]%","last_id":"%last_known_sms_id%","last_sent_id":"%last_known_sent_sms_id%","device":"%installid%"}';
+    $send = '{"from":"%account[cloud_username]%","password":"%account[cloud_password]%","to":"%sms_to%","body":"%sms_body%","content_type":"%content_type%"}';
+    $push = '{"username":"%account[cloud_username]%","password":"%account[cloud_password]%","token_calls":"%pushTokenIncomingCall%","token_msgs":"%pushTokenOther%","selector":"%selector%","appId_calls":"%pushappid_incoming_call%","appId_msgs":"%pushappid_other%"}';
+    return "<genericSmsFetchUrl>$base/api/client/fetch_messages</genericSmsFetchUrl>\n" .
+        "<genericSmsFetchPostData>$fetch</genericSmsFetchPostData>\n" .
+        "<genericSmsFetchContentType>application/json</genericSmsFetchContentType>\n" .
+        "<genericSmsSendUrl>$base/api/client/send_message</genericSmsSendUrl>\n" .
+        "<genericSmsSendPostData>$send</genericSmsSendPostData>\n" .
+        "<genericSmsSendContentType>application/json</genericSmsSendContentType>\n" .
+        "<pushTokenReporterUrl>$base/api/client/push_token_report</pushTokenReporterUrl>\n" .
+        "<pushTokenReporterPostData>$push</pushTokenReporterPostData>\n" .
+        "<pushTokenReporterContentType>application/json</pushTokenReporterContentType>\n";
 }
 
 function handle($data)
@@ -456,6 +490,8 @@ function handle($data)
                     <blf>" . implode("", $busylamps) . "</blf>
                     </account>
                     ";
+
+            $xmlConfString = str_replace('</account>', chatAccountXml($cloudDomain) . '</account>', $xmlConfString);
 
             // return xml string
             echo $xmlConfString;
