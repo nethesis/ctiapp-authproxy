@@ -352,10 +352,11 @@ function chatAccountXml($cloudDomain)
     curl_setopt($ch, CURLOPT_SSL_VERIFYPEER, false);
     curl_setopt($ch, CURLOPT_CONNECTTIMEOUT, 2);
     curl_setopt($ch, CURLOPT_TIMEOUT, 3);
-    curl_exec($ch);
+    $body = curl_exec($ch);
     $code = curl_getinfo($ch, CURLINFO_HTTP_CODE);
     curl_close($ch);
-    if ($code != 200) {
+    // the gateway's own answer, not a page that says 200 to any path
+    if ($code != 200 || trim((string) $body) !== "ok") {
         return "";
     }
     $fetch = '{"username":"%account[cloud_username]%","password":"%account[cloud_password]%","last_id":"%last_known_sms_id%","last_sent_id":"%last_known_sent_sms_id%","device":"%installid%"}';
