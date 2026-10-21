@@ -31,10 +31,11 @@ RUN chown -R www-data:www-data /var/www/html \
     && find /var/www/html -type d -exec chmod 755 {} \; \
     && find /var/www/html -type f -exec chmod 644 {} \;
 
-# Configure PHP (optional)
+# Configure PHP and disable unused session upload progress before request handling
 RUN echo "expose_php = Off" >> /usr/local/etc/php/conf.d/security.ini \
     && echo "display_errors = Off" >> /usr/local/etc/php/conf.d/security.ini \
-    && echo "log_errors = On" >> /usr/local/etc/php/conf.d/security.ini
+    && echo "log_errors = On" >> /usr/local/etc/php/conf.d/security.ini \
+    && echo "session.upload_progress.enabled = Off" >> /usr/local/etc/php/conf.d/security.ini
 
 # Configure Apache (optional)
 RUN echo "ServerTokens Prod" >> /etc/apache2/conf-available/security.conf \
