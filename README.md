@@ -53,6 +53,19 @@ The application is configured using environment variables. You can create a
 | `DEBUG` | Enable debug logging. | `false` |
 | `VALIDATE_LK_URL` | URL used to validate the license key/token. | `https://example.com/validate` |
 
+## PHP request handling
+
+The API reads raw JSON from `php://input` and does not use PHP form parsing or
+file uploads. The image disables automatic POST parsing, file uploads, and
+session upload progress. Apache rejects `multipart/form-data` requests with
+HTTP 403 before PHP executes, including multipart forms without attached files.
+Raw JSON requests keep their existing behavior, including clients that send
+JSON with `Content-Type: application/x-www-form-urlencoded`.
+
+Rebuild and deploy the image to apply these controls. They reduce exposure to
+multipart request processing and do not replace an officially patched PHP
+runtime.
+
 ## Development
 
 This project uses `just` as a command runner to simplify development tasks.

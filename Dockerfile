@@ -31,16 +31,21 @@ RUN chown -R www-data:www-data /var/www/html \
     && find /var/www/html -type d -exec chmod 755 {} \; \
     && find /var/www/html -type f -exec chmod 644 {} \;
 
-# Configure PHP and disable unused session upload progress before request handling
+# Configure PHP for the raw JSON API without automatic form parsing
 RUN echo "expose_php = Off" >> /usr/local/etc/php/conf.d/security.ini \
     && echo "display_errors = Off" >> /usr/local/etc/php/conf.d/security.ini \
     && echo "log_errors = On" >> /usr/local/etc/php/conf.d/security.ini \
-    && echo "session.upload_progress.enabled = Off" >> /usr/local/etc/php/conf.d/security.ini
+    && echo "session.upload_progress.enabled = Off" >> /usr/local/etc/php/conf.d/security.ini \
+    && echo "enable_post_data_reading = Off" >> /usr/local/etc/php/conf.d/security.ini \
+    && echo "file_uploads = Off" >> /usr/local/etc/php/conf.d/security.ini
 
-# Configure Apache (optional)
+# Reject unused multipart requests before they reach PHP
+COPY apache/no-multipart.conf /etc/apache2/conf-available/no-multipart.conf
+
+# Configure Apache
 RUN echo "ServerTokens Prod" >> /etc/apache2/conf-available/security.conf \
     && echo "ServerSignature Off" >> /etc/apache2/conf-available/security.conf \
-    && a2enconf security
+    && a2enconf security no-multipart
 
 # Health check
 HEALTHCHECK --interval=30s --timeout=5s --start-period=5s --retries=3 \
