@@ -370,7 +370,10 @@ function chatAccountXml($cloudDomain)
         "<genericSmsSendContentType>application/json</genericSmsSendContentType>\n" .
         "<pushTokenReporterUrl>$base/api/client/push_token_report</pushTokenReporterUrl>\n" .
         "<pushTokenReporterPostData>$push</pushTokenReporterPostData>\n" .
-        "<pushTokenReporterContentType>application/json</pushTokenReporterContentType>\n";
+        "<pushTokenReporterContentType>application/json</pushTokenReporterContentType>\n" .
+        // Deleting a message: for me only, or for everyone when it is mine.
+        "<msgLocalDeleteSupported>1</msgLocalDeleteSupported>\n" .
+        "<msgRemoteDeleteSupported>1</msgRemoteDeleteSupported>\n";
 }
 
 function handle($data)
