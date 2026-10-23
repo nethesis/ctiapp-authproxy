@@ -605,7 +605,11 @@ function handle($data)
 
                 foreach ($chunkResponse['rows'] as $contact) {
                 // compose contacts object with minimal memory footprint
-                $displayName = trim(($contact["name"] ?? '') . ' ' . ($contact["surname"] ?? ''));
+                $firstName = trim($contact["name"] ?? '');
+                if ($firstName === '-') {
+                    $firstName = '';
+                }
+                $displayName = trim($firstName . ' ' . ($contact["surname"] ?? ''));
                 if (empty($displayName)) {
                     $displayName = $contact["company"] ?? "Unknown Contact";
                 }
@@ -613,7 +617,7 @@ function handle($data)
                 $contacts[] = [
                     "contactId" => $contact["id"] ?? uniqid(),
                     "displayName" => $displayName,
-                    "fname" => $contact["name"] ?? "",
+                    "fname" => $firstName,
                     "lname" => $contact["surname"] ?? "",
                     "company" => $contact["company"] ?? "",
                     "notes" => $contact["notes"] ?? "",
