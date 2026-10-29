@@ -41,6 +41,42 @@ curl -k https://localhost:8443/index.php/healthcheck
 curl https://ctiapp-authproxy.example.com/index.php/healthcheck
 ```
 
+## Operators and avatars
+
+The `contacts` app lists every NethVoice operator once, built from
+`/user/endpoints/all` (main extension, mobile numbers, emails). The
+`extension` rows of the centralized phonebook, which are the same users synced
+by NethVoice, are skipped.
+
+Acrobits only accepts a URL for contact avatars and quick dial portraits, so
+the operators' pictures (`/user/all_avatars`) are cached under
+`/tmp/avatars/<domain>/` and served by the proxy at:
+
+```
+GET /index.php/avatar/<domain>/<username>/<version>/<signature>.<ext>
+```
+
+The signature is an HMAC of the path computed with `TOKEN`, so the URLs cannot
+be guessed. The URLs are built with `APP_HOSTNAME`; when it is not set, the
+`Host` header of the request is used.
+
+The pictures are downloaded at most once an hour per tenant, and not at all
+when `all_avatars` exceeds 24 MB (the cache is kept). The quick dial uses a
+per-tenant map of the operators' extensions (`extensions.json`, refreshed on
+the same schedule) instead of asking the users list on every call.
+
+The user's chat groups that have a picture (NethVoice chat, `GET
+/chat-gw/groups` on the tenant, middleware mode only) are listed as contacts
+too: the app shows a group under its name, so a contact with that address
+gives it the picture. The group pictures are cached with the operators' ones
+under the key `~<room>`.
+
+The contacts answer is `304 Not Modified` when the phonebook count is unchanged
+and the copy held by the app is less than 24 hours old. A copy older than the
+deployed `index.php` is regenerated as well, so every device picks up a change
+of the contacts format at its next poll instead of a day later. To force that
+for one tenant, `touch /tmp/avatars/<domain>/regen` in the container.
+
 ## Settings
 
 The application is configured using environment variables. You can create a
@@ -48,7 +84,7 @@ The application is configured using environment variables. You can create a
 
 | Variable | Description | Default / Example |
 |----------|-------------|-------------------|
-| `APP_HOSTNAME` | The hostname where the application is reachable. | `app.example.com` |
+| `APP_HOSTNAME` | The hostname where the application is reachable, used to build the avatar URLs. | `app.example.com` |
 | `TOKEN` | A shared secret token (SHA256 hash) used to validate requests. | `your_token_here` |
 | `DEBUG` | Enable debug logging. | `false` |
 | `VALIDATE_LK_URL` | URL used to validate the license key/token. | `https://example.com/validate` |
