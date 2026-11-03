@@ -333,6 +333,8 @@ function getSipCredentials($cloudUsername, $cloudPassword, $cloudDomain, $isToke
                 'sipUser' => $sipUser,
                 'sipPassword' => $sipPassword,
                 'proxy_fqdn' => (isset($response['proxy_fqdn']) ? $response['proxy_fqdn'] : ""),
+                // TLS port of the proxy; NethVoice versions that do not send it use 5061
+                'proxy_tls_port' => (isset($response['proxy_tls_port']) && (int)$response['proxy_tls_port'] > 0 ? (int)$response['proxy_tls_port'] : 5061),
                 'authContext' => $authContext
             ];
         }
@@ -997,7 +999,7 @@ function handle($data)
             // compose xml configuration string
             $proxy = "";
             if ($result['proxy_fqdn']) {
-                $proxy = "<proxy>{$result['proxy_fqdn']}:5061</proxy>";
+                $proxy = "<proxy>{$result['proxy_fqdn']}:{$result['proxy_tls_port']}</proxy>";
             } else {
                 // print debug
                 debug("No proxy fqdn found in response for {$cloudUsername}@{$cloudDomain}", $cloudDomain);
