@@ -362,6 +362,8 @@ function chatAccountXml($cloudDomain)
     $fetch = '{"username":"%account[cloud_username]%","password":"%account[cloud_password]%","last_id":"%last_known_sms_id%","last_sent_id":"%last_known_sent_sms_id%","device":"%installid%"}';
     $send = '{"from":"%account[cloud_username]%","password":"%account[cloud_password]%","to":"%sms_to%","body":"%sms_body%","content_type":"%content_type%"}';
     $push = '{"username":"%account[cloud_username]%","password":"%account[cloud_password]%","token_calls":"%pushTokenIncomingCall%","token_msgs":"%pushTokenOther%","selector":"%selector%","appId_calls":"%pushappid_incoming_call%","appId_msgs":"%pushappid_other%"}';
+    // Sent on logout or account removal: the gateway drops the token and the phone gets no more chat pushes.
+    $removal = '{"username":"%account[cloud_username]%","token_msgs":"%pushTokenOther%","selector":"%selector%"}';
     return "<genericSmsFetchUrl>$base/api/client/fetch_messages</genericSmsFetchUrl>\n" .
         "<genericSmsFetchPostData>$fetch</genericSmsFetchPostData>\n" .
         "<genericSmsFetchContentType>application/json</genericSmsFetchContentType>\n" .
@@ -371,6 +373,9 @@ function chatAccountXml($cloudDomain)
         "<pushTokenReporterUrl>$base/api/client/push_token_report</pushTokenReporterUrl>\n" .
         "<pushTokenReporterPostData>$push</pushTokenReporterPostData>\n" .
         "<pushTokenReporterContentType>application/json</pushTokenReporterContentType>\n" .
+        "<reportAccountRemovalUrl>$base/api/client/account_removal_report</reportAccountRemovalUrl>\n" .
+        "<reportAccountRemovalPostData>$removal</reportAccountRemovalPostData>\n" .
+        "<reportAccountRemovalContentType>application/json</reportAccountRemovalContentType>\n" .
         // Deleting a message: for me only, or for everyone when it is mine.
         "<msgLocalDeleteSupported>1</msgLocalDeleteSupported>\n" .
         "<msgRemoteDeleteSupported>1</msgRemoteDeleteSupported>\n";
