@@ -177,6 +177,22 @@ function buildApiUrl($cloudDomain, $basePath, $endpointPath)
     return "https://$cloudDomain{$basePath}{$endpointPath}";
 }
 
+// Whether a middleware JWT still waits for the second factor (2FA enabled,
+// OTP not verified). The claims are only read, not verified: the token comes
+// straight from the middleware login response.
+function jwtRequiresSecondFactor($jwtToken)
+{
+    $parts = explode('.', $jwtToken);
+    if (count($parts) !== 3) {
+        return false;
+    }
+    $claims = json_decode(base64_decode(strtr($parts[1], '-_', '+/')), true);
+    if (!is_array($claims)) {
+        return false;
+    }
+    return ($claims['2fa'] ?? false) === true && ($claims['otp_verified'] ?? false) !== true;
+}
+
 // Build auth context with automatic fallback:
 // 1) middleware mode: /api + Authorization: Bearer <jwt>
 // 2) legacy mode: /webrest + Authorization: username:token
@@ -191,7 +207,8 @@ function getAuthContext($cloudUsername, $cloudPassword, $cloudDomain, $isToken =
         $jwtHttpCode = 0;
         $jwtToken = getJWTToken($cloudUsername, $cloudPassword, $cloudDomain, $jwtHttpCode);
         if ($jwtToken) {
-            $userMe = makeRequest($jwtToken, buildApiUrl($cloudDomain, '/api', '/user/me'), 'bearer');
+            $userMeHttpCode = 0;
+            $userMe = makeRequest($jwtToken, buildApiUrl($cloudDomain, '/api', '/user/me'), 'bearer', null, $userMeHttpCode);
             if (isValidUserMeResponse($userMe)) {
                 debug("Using middleware mode for {$cloudUsername}@{$cloudDomain}", $cloudDomain);
                 return [
@@ -201,6 +218,17 @@ function getAuthContext($cloudUsername, $cloudPassword, $cloudDomain, $isToken =
                     'userMe' => $userMe
                 ];
             }
+
+            // The middleware accepted the password but the user must also
+            // complete the second factor, which the app cannot do: the user
+            // has to sign in with the QR code, the legacy login is not an
+            // alternative.
+            if (jwtRequiresSecondFactor($jwtToken)) {
+                debug("Second factor required for {$cloudUsername}@{$cloudDomain} (user/me HTTP {$userMeHttpCode}), skipping legacy fallback", $cloudDomain);
+                $authRejected = true;
+                return false;
+            }
+            debug("Middleware user/me failed for {$cloudUsername}@{$cloudDomain} (HTTP {$userMeHttpCode}), trying legacy mode", $cloudDomain);
         }
 
         // The middleware rejected the credentials: it has already performed
