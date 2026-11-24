@@ -284,12 +284,14 @@ function getAuthContext($cloudUsername, $cloudPassword, $cloudDomain, $isToken =
             ];
         }
 
-        // The token has been explicitly rejected on both endpoints: it has
-        // been revoked or regenerated server side (e.g. a new QR code was
-        // created). Other combinations (network error, middleware missing)
-        // are not treated as a rejection.
+        // The token has been explicitly rejected: it has been revoked or
+        // regenerated server side (e.g. a new QR code was created). The
+        // middleware rejected it, and the legacy endpoint either rejected
+        // it too or does not exist (404: NethVoice 1.9 and later no
+        // longer publish /webrest). Other combinations (network error,
+        // middleware missing) are not treated as a rejection.
         if (($bearerHttpCode === 401 || $bearerHttpCode === 403) &&
-            ($legacyHttpCode === 401 || $legacyHttpCode === 403)) {
+            ($legacyHttpCode === 401 || $legacyHttpCode === 403 || $legacyHttpCode === 404)) {
             debug("Token rejected on both endpoints for {$cloudUsername}@{$cloudDomain}", $cloudDomain);
             $authRejected = true;
         }
